@@ -2899,6 +2899,12 @@ MavlinkReceiver::handle_message_target_relative(mavlink_message_t *msg)
 	vehicle_attitude_s	vehicle_attitude;
 	vehicle_local_position_s vehicle_local_position;
 
+	target_rel_msg_cnt++;
+	if (target_rel_msg_cnt % 50 == 0) {
+		PX4_INFO("Target Relative Message Counter: %d", target_rel_msg_cnt);
+	}
+
+
 	bool publish_target = false;
 	matrix::Quatf q_sensor(target_relative.q_sensor);
 
@@ -2997,7 +3003,8 @@ MavlinkReceiver::handle_message_target_relative(mavlink_message_t *msg)
 				// Position report
 				fiducial_marker_pos_report_s fiducial_marker_pos_report{};
 
-				fiducial_marker_pos_report.timestamp = _mavlink_timesync.sync_stamp(target_relative.timestamp);
+				// fiducial_marker_pos_report.timestamp = _mavlink_timesync.sync_stamp(target_relative.timestamp);
+				fiducial_marker_pos_report.timestamp = hrt_absolute_time();
 				fiducial_marker_pos_report.x_rel_body = target_relative.x;
 				fiducial_marker_pos_report.y_rel_body = target_relative.y;
 				fiducial_marker_pos_report.z_rel_body = target_relative.z;

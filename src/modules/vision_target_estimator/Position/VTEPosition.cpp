@@ -166,7 +166,7 @@ void VTEPosition::update(const Vector3f &acc_ned)
 	if (_estimator_initialized) {
 
 		if (hrt_absolute_time() - _last_update > _vte_TIMEOUT_US) {
-			PX4_WARN("VTE Position estimator timeout");
+			PX4_WARN("VTE Position estimator timeout. hrt_absolute_time=%d _last_update=%d, _vte_TIMEOUT_US=%d", (int)hrt_absolute_time(), (int)_last_update, (int)_vte_TIMEOUT_US);
 			_has_timed_out = true;
 
 		} else {
@@ -174,12 +174,14 @@ void VTEPosition::update(const Vector3f &acc_ned)
 			predictionStep(acc_ned);
 			perf_end(_vte_predict_perf);
 
+			// PX4_INFO("_last_predict updated.");
 			_last_predict = hrt_absolute_time();
 		}
 	}
 
 	// Update and fuse the observations and publishes innovations
 	if (updateStep(acc_ned)) {
+		PX4_INFO("_last_update updated to %d at %d", (int)_last_predict, int(hrt_absolute_time));
 		_last_update = _last_predict;
 	}
 
@@ -288,6 +290,7 @@ bool VTEPosition::updateStep(const Vector3f &vehicle_acc_ned)
 
 	// No new observations --> no fusion.
 	if (vte_fusion_aid_mask == ObservationValidMask::NO_VALID_DATA) {
+		// PX4_WARN("US ER: vte_fusion_aid_mask == ObservationValidMask::NO_VALID_DATA");
 		return false;
 	}
 
@@ -296,12 +299,14 @@ bool VTEPosition::updateStep(const Vector3f &vehicle_acc_ned)
 
 	// Only init estimator once we have a valid position observation
 	if (!_estimator_initialized && !new_pos_sensor) {
+		PX4_WARN("US ER: (!_estimator_initialized && !new_pos_sensor)" );
 		return false;
 	}
 
 	// Initialize estimator if not already initialized
 	if (!_estimator_initialized &&
 	    !initializeEstimator(vte_fusion_aid_mask, observations)) {
+		PX4_WARN("US ER: (!_estimator_initialized && !initializeEstimator(vte_fusion_aid_mask, observations))");
 		return false;
 	}
 
@@ -312,9 +317,9 @@ bool VTEPosition::updateStep(const Vector3f &vehicle_acc_ned)
 
 	// Fuse new sensor data
 	if (new_pos_sensor || hasNewVelocitySensorData(vte_fusion_aid_mask)) {
+		// PX4_INFO("fuseNewSensorData() called.");
 		return fuseNewSensorData(vehicle_acc_ned, vte_fusion_aid_mask, observations);
 	}
-
 	return false;
 }
 
@@ -367,14 +372,17 @@ void VTEPosition::handleVisionData(ObservationValidMask &vte_fusion_aid_mask, ta
 	fiducial_marker_pos_report_s fiducial_marker_pose;
 
 	if (!(_vte_aid_mask & SensorFusionMask::USE_EXT_VIS_POS)) {
+		PX4_WARN("EARLY RETURN: !(_vte_aid_mask & SensorFusionMask::USE_EXT_VIS_POS)");
 		return;
 	}
 
 	if (!_fiducial_marker_report_sub.update(&fiducial_marker_pose)) {
+		// PX4_WARN("EARLY RETURN: !_fiducial_marker_report_sub.update(&fiducial_marker_pose)");
 		return;
 	}
 
 	if (!isVisionDataValid(fiducial_marker_pose)) {
+		PX4_WARN("EARLY RETURN: isVisionDataValid(fiducial_marker_pose)");
 		return;
 	}
 
@@ -387,7 +395,9 @@ void VTEPosition::handleVisionData(ObservationValidMask &vte_fusion_aid_mask, ta
 bool VTEPosition::isVisionDataValid(const fiducial_marker_pos_report_s &fiducial_marker_pose)
 {
 	// TODO: extend checks
-	return isMeasValid(fiducial_marker_pose.timestamp);
+	bool is_vision_data_valid = isMeasValid(fiducial_marker_pose.timestamp);
+	// PX4_WARN("isVisionDataValid returning %d", (int)is_vision_data_valid);
+	return is_vision_data_valid;
 }
 
 
@@ -766,6 +776,7 @@ bool VTEPosition::fuseNewSensorData(const matrix::Vector3f &vehicle_acc_ned, Obs
 
 	// Fuse vision position
 	if (vte_fusion_aid_mask & ObservationValidMask::FUSE_EXT_VIS_POS) {
+		// PX4_INFO("FUSING VISION POSITION");
 		if (fuseMeas(vehicle_acc_ned, observations[ObservationType::fiducial_marker])) {
 			_last_vision_obs_fused_time = hrt_absolute_time();
 			pos_fused = true;
@@ -1068,7 +1079,7 @@ bool VTEPosition::fuseMeas(const Vector3f &vehicle_acc_ned, const targetObsPos &
 
 	if (dt_sync_us > measurement_valid_TIMEOUT_US) {
 
-		PX4_DEBUG("Obs i = %d too old. Time sync: %.2f [ms] > timeout: %.2f [ms]",
+		PX4_WARN("Obs i = %d too old. Time sync: %.2f [ms] > timeout: %.2f [ms]",
 			  target_pos_obs.type,
 			  (double)(dt_sync_us / 1000), (double)(measurement_valid_TIMEOUT_US / 1000));
 
@@ -1080,7 +1091,7 @@ bool VTEPosition::fuseMeas(const Vector3f &vehicle_acc_ned, const targetObsPos &
 
 	if (!target_pos_obs.updated) {
 		all_directions_fused = false;
-		PX4_DEBUG("Obs i = %d : non-valid", target_pos_obs.type);
+		PX4_WARN("Obs i = %d : non-valid", target_pos_obs.type);
 		target_innov.fused = false;
 		perf_end(_vte_update_perf);
 		publishInnov(target_innov, target_pos_obs.type);
@@ -1266,6 +1277,7 @@ void VTEPosition::publishTarget()
 
 
 	// Prec land does not check target_pose.abs_pos_valid. Only send the target if abs pose valid.
+	PX4_INFO("_local_position.valid %d target_pose.rel_pos_valid %d", (int)_local_position.valid, (int)target_pose.rel_pos_valid);
 	if (_local_position.valid && target_pose.rel_pos_valid) {
 		target_pose.x_abs = target_pose.x_rel + _local_position.xyz(0);
 		target_pose.y_abs = target_pose.y_rel + _local_position.xyz(1);

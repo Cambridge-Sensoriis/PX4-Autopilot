@@ -262,6 +262,7 @@ private:
 	MavlinkParametersManager	_parameters_manager;
 	MavlinkTimesync			_mavlink_timesync;
 	MavlinkStatustextHandler	_mavlink_statustext_handler;
+	int target_rel_msg_cnt{0};
 
 	mavlink_status_t		_status{}; ///< receiver status, used for mavlink_parse_char()
 

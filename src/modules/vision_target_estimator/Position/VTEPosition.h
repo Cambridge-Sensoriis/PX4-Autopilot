@@ -133,7 +133,7 @@ protected:
 	static constexpr uint32_t measurement_valid_TIMEOUT_US = 1_s;
 
 	/* timeout after which the measurement is not considered updated*/
-	static constexpr uint32_t measurement_updated_TIMEOUT_US = 100_ms;
+	static constexpr uint32_t measurement_updated_TIMEOUT_US = 300_ms;
 
 	/* Valid AoA measurement range between -60.00° and +60.00° for UWB*/
 	static constexpr float max_uwb_aoa_angle_degree = 60.0f;
