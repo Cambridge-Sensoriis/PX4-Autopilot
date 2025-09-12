@@ -1039,6 +1039,7 @@ bool VTEPosition::processObsGNSSPosTarget(const target_gnss_s &target_GNSS_repor
 	obs.meas_h_xyz(Direction::z, vtest::State::pos_rel) = 1;
 
 	if (_bias_set) {
+		//PX4_WARN("_bias_set is True, %.3f %.3f %.3f", obs.meas_h_xyz[Direction::x, vtest::State::bias], obs.meas_h_xyz.get(Direction::y, vtest::State::bias), obs.meas_h_xyz.get(Direction::z, vtest::State::bias));
 		obs.meas_h_xyz(Direction::x, vtest::State::bias) = 1;
 		obs.meas_h_xyz(Direction::y, vtest::State::bias) = 1;
 		obs.meas_h_xyz(Direction::z, vtest::State::bias) = 1;
