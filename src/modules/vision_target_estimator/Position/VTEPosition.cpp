@@ -1073,7 +1073,11 @@ bool VTEPosition::fuseMeas(const Vector3f &vehicle_acc_ned, const targetObsPos &
 	bool all_directions_fused = true;
 
 	// Compute the measurement's time delay (difference between state and measurement time on validity)
-	const float dt_sync_us = (_last_predict - target_pos_obs.timestamp);
+	const float dt_sync_us = 0;
+	if (_last_predict > target_pos_obs.timestamp)
+	{
+		dt_sync_us = _last_predict - target_pos_obs.timestamp;
+	}
 	target_innov.time_last_fuse = (int)(dt_sync_us / 1000); // For debug: log the time sync. TODO: remove
 	target_innov.timestamp_sample = target_pos_obs.timestamp;
 	target_innov.timestamp = hrt_absolute_time();
