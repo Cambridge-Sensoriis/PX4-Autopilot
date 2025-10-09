@@ -120,11 +120,11 @@ bool RtlDirectMissionLand::setNextMissionItem()
 
 void RtlDirectMissionLand::setActiveMissionItems()
 {
-	WorkItemType new_work_item_type{WorkItemType::WORK_ITEM_TYPE_DEFAULT};
+	uint8_t new_work_item_type{navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT};
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
 	// Climb to altitude
-	if (_needs_climbing && _work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+	if (_needs_climbing && _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 		// TODO: check if we also should use NAV_CMD_LOITER_TO_ALT for rotary wing
 		if (_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_ROTARY_WING) {
 			_mission_item.nav_cmd = NAV_CMD_WAYPOINT;
@@ -153,11 +153,11 @@ void RtlDirectMissionLand::setActiveMissionItems()
 		_needs_climbing = false;
 		mission_item_to_position_setpoint(_mission_item, &pos_sp_triplet->current);
 
-		new_work_item_type = WorkItemType::WORK_ITEM_TYPE_CLIMB;
+		new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB;
 
 	} else if (_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_ROTARY_WING &&
 		   _vehicle_status_sub.get().is_vtol &&
-		   !_land_detected_sub.get().landed && _work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+		   !_land_detected_sub.get().landed && _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 		// Transition to fixed wing if necessary.
 		set_vtol_transition_item(&_mission_item, vtol_vehicle_status_s::VEHICLE_VTOL_STATE_FW);
 		_mission_item.yaw = _navigator->get_local_position()->heading;
@@ -165,7 +165,7 @@ void RtlDirectMissionLand::setActiveMissionItems()
 		// keep current setpoints (FW position controller generates wp to track during transition)
 		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
 
-		new_work_item_type = WorkItemType::WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF;
+		new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF;
 
 	} else if (item_contains_position(_mission_item)) {
 
@@ -220,7 +220,7 @@ void RtlDirectMissionLand::setActiveMissionItems()
 						   _mission_item.nav_cmd == NAV_CMD_WAYPOINT;
 		const bool mc_landing_after_transition = _vehicle_status_sub.get().vehicle_type ==
 				vehicle_status_s::VEHICLE_TYPE_ROTARY_WING && _vehicle_status_sub.get().is_vtol &&
-				new_work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+				new_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 		if (fw_on_mission_landing || mc_landing_after_transition) {
 			pos_sp_triplet->current.alt_acceptance_radius = FLT_MAX;
@@ -254,7 +254,7 @@ rtl_time_estimate_s RtlDirectMissionLand::calc_rtl_time_estimate()
 
 		if (isActive()) {
 			start_item_index = math::max(_mission.current_seq, _mission.land_start_index);
-			is_in_climbing_submode = _work_item_type == WorkItemType::WORK_ITEM_TYPE_CLIMB;
+			is_in_climbing_submode = _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB;
 
 		} else {
 			start_item_index = _mission.land_start_index;

@@ -83,16 +83,17 @@ protected:
 	 */
 	static constexpr hrt_abstime MAX_DATAMAN_LOAD_WAIT{500_ms};
 
-	// Work Item corresponds to the sub-mode set on the "MAV_CMD_DO_SET_MODE" MAVLink message
-	enum class WorkItemType {
-		WORK_ITEM_TYPE_DEFAULT,		/**< default mission item */
-		WORK_ITEM_TYPE_CLIMB,		/**< takeoff before moving to waypoint */
-		WORK_ITEM_TYPE_MOVE_TO_LAND,	/**< move to land waypoint before descent */
-		WORK_ITEM_TYPE_ALIGN_HEADING,		/**< align for next waypoint */
-		WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF,
-		WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION,
-		WORK_ITEM_TYPE_PRECISION_LAND
-	} _work_item_type{WorkItemType::WORK_ITEM_TYPE_DEFAULT};	/**< current type of work to do (sub mission item) */
+	// // Work Item corresponds to the sub-mode set on the "MAV_CMD_DO_SET_MODE" MAVLink message
+	// enum class WorkItemType {
+	// 	WORK_ITEM_TYPE_DEFAULT,		/**< default mission item */
+	// 	WORK_ITEM_TYPE_CLIMB,		/**< takeoff before moving to waypoint */
+	// 	WORK_ITEM_TYPE_MOVE_TO_LAND,	/**< move to land waypoint before descent */
+	// 	WORK_ITEM_TYPE_ALIGN_HEADING,		/**< align for next waypoint */
+	// 	WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF,
+	// 	WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION,
+	// 	WORK_ITEM_TYPE_PRECISION_LAND
+	// }
+	uint8_t _work_item_type{navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT};	/**< current type of work to do (sub mission item) */
 
 	enum class MissionType {
 		MISSION_TYPE_NONE,
@@ -304,7 +305,7 @@ protected:
 	 * @param next_mission_items the next mission items after the current mission item
 	 * @param num_found_items number of found next mission items
 	 */
-	void handleLanding(WorkItemType &new_work_item_type, mission_item_s next_mission_items[],
+	void handleLanding(uint8_t &new_work_item_type, mission_item_s next_mission_items[],
 			   size_t &num_found_items);
 	/**
 	 * @brief I position setpoint equal

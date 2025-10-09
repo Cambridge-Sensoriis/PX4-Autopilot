@@ -79,7 +79,6 @@ Navigator::Navigator() :
 	_vtol_takeoff(this),
 #endif //CONFIG_MODE_NAVIGATOR_VTOL_TAKEOFF
 	_land(this),
-	_precland(this),
 	_rtl(this)
 {
 	/* Create a list of our possible navigation types */
@@ -88,9 +87,8 @@ Navigator::Navigator() :
 	_navigation_mode_array[2] = &_rtl;
 	_navigation_mode_array[3] = &_takeoff;
 	_navigation_mode_array[4] = &_land;
-	_navigation_mode_array[5] = &_precland;
 #if CONFIG_MODE_NAVIGATOR_VTOL_TAKEOFF
-	_navigation_mode_array[6] = &_vtol_takeoff;
+	_navigation_mode_array[5] = &_vtol_takeoff;
 #endif //CONFIG_MODE_NAVIGATOR_VTOL_TAKEOFF
 
 	/* iterate through navigation modes and initialize _mission_item for each */
@@ -812,12 +810,6 @@ void Navigator::run()
 		case vehicle_status_s::NAVIGATION_STATE_AUTO_LAND:
 			_pos_sp_triplet_published_invalid_once = false;
 			navigation_mode_new = &_land;
-			break;
-
-		case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND:
-			_pos_sp_triplet_published_invalid_once = false;
-			navigation_mode_new = &_precland;
-			_precland.set_mode(PrecLandMode::Required);
 			break;
 
 		case vehicle_status_s::NAVIGATION_STATE_MANUAL:

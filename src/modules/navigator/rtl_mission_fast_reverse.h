@@ -67,7 +67,7 @@ public:
 private:
 	bool setNextMissionItem() override;
 	void setActiveMissionItems() override;
-	void handleLanding(WorkItemType &new_work_item_type);
+	void handleLanding(uint8_t &new_work_item_type);
 
 	int _mission_index_prior_rtl{-1};
 

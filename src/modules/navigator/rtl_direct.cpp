@@ -63,10 +63,6 @@ RtlDirect::RtlDirect(Navigator *navigator) :
 
 void RtlDirect::on_inactivation()
 {
-	if (_navigator->get_precland()->is_activated()) {
-		_navigator->get_precland()->on_inactivation();
-	}
-
 	_rtl_state = RTLState::IDLE;
 }
 
@@ -108,14 +104,6 @@ void RtlDirect::on_active()
 		//check for terrain collision and update altitude if needed
 		// note: it may trigger multiple times during a RTL, as every time the altitude set is reset
 		updateAltToAvoidTerrainCollisionAndRepublishTriplet(_mission_item);
-	}
-
-	if (_rtl_state == RTLState::LAND && _mission_item.land_precision > 0) {
-		// Need to update the position and type on the current setpoint triplet.
-		_navigator->get_precland()->on_active();
-
-	} else if (_navigator->get_precland()->is_activated()) {
-		_navigator->get_precland()->on_inactivation();
 	}
 }
 
@@ -366,12 +354,6 @@ void RtlDirect::set_rtl_item()
 			PositionYawSetpoint pos_yaw_sp{_destination};
 			pos_yaw_sp.yaw = !_param_wv_en.get() ? _destination.yaw : NAN; // set final yaw if weather vane is disabled
 			setLandMissionItem(_mission_item, pos_yaw_sp);
-
-			_mission_item.land_precision = _param_rtl_pld_md.get();
-
-			if (_mission_item.land_precision > 0) {
-				startPrecLand(_mission_item.land_precision);
-			}
 
 			mavlink_log_info(_navigator->get_mavlink_log_pub(), "RTL: land at destination\t");
 			events::send(events::ID("rtl_land_at_destination"), events::Log::Info, "RTL: land at destination");

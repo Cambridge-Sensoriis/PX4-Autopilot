@@ -101,20 +101,20 @@ bool RtlMissionFastReverse::setNextMissionItem()
 
 void RtlMissionFastReverse::setActiveMissionItems()
 {
-	WorkItemType new_work_item_type{WorkItemType::WORK_ITEM_TYPE_DEFAULT};
+	uint8_t new_work_item_type{navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT};
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
 	// Transition to fixed wing if necessary.
 	if (_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_ROTARY_WING &&
 	    _vehicle_status_sub.get().is_vtol &&
-	    !_land_detected_sub.get().landed && _work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+	    !_land_detected_sub.get().landed && _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 		set_vtol_transition_item(&_mission_item, vtol_vehicle_status_s::VEHICLE_VTOL_STATE_FW);
 		_mission_item.yaw = _navigator->get_local_position()->heading;
 
 		// keep current setpoints (FW position controller generates wp to track during transition)
 		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
 
-		new_work_item_type = WorkItemType::WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF;
+		new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_TRANSITION_AFTER_TAKEOFF;
 
 	} else if (item_contains_position(_mission_item)) {
 		int32_t next_mission_item_index;
@@ -157,7 +157,7 @@ void RtlMissionFastReverse::setActiveMissionItems()
 		mission_item_to_position_setpoint(_mission_item, &pos_sp_triplet->current);
 		const bool mc_landing_after_transition = _vehicle_status_sub.get().vehicle_type ==
 				vehicle_status_s::VEHICLE_TYPE_ROTARY_WING && _vehicle_status_sub.get().is_vtol &&
-				new_work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+				new_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 		if (mc_landing_after_transition) {
 			pos_sp_triplet->current.alt_acceptance_radius = FLT_MAX;
@@ -179,7 +179,7 @@ void RtlMissionFastReverse::setActiveMissionItems()
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
-void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
+void RtlMissionFastReverse::handleLanding(uint8_t &new_work_item_type)
 {
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
@@ -188,9 +188,9 @@ void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
 			  (_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING);
 
 	if (needs_to_land) {
-		if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+		if (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 			// Go to Take off location
-			new_work_item_type = WorkItemType::WORK_ITEM_TYPE_CLIMB;
+			new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB;
 
 			if (!PX4_ISFINITE(_mission_item.altitude)) {
 				_mission_item.altitude = _global_pos_sub.get().alt;
@@ -206,9 +206,9 @@ void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
 		}
 
 		if (vtol_in_fw) {
-			if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_CLIMB) {
+			if (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB) {
 				// Go to home location
-				new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+				new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 				float altitude = _global_pos_sub.get().alt;
 
@@ -229,23 +229,23 @@ void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
 			}
 
 			/* transition to MC */
-			if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND) {
+			if (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND) {
 
 				set_vtol_transition_item(&_mission_item, vtol_vehicle_status_s::VEHICLE_VTOL_STATE_MC);
 				_mission_item.altitude = _global_pos_sub.get().alt;
 				_mission_item.altitude_is_relative = false;
 				_mission_item.yaw = NAN;
 
-				new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION;
+				new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION;
 
 				// make previous setpoint invalid, such that there will be no prev-current line following
 				// if the vehicle drifted off the path during back-transition it should just go straight to the landing point
 				_navigator->reset_position_setpoint(pos_sp_triplet->previous);
 			}
 
-		} else if ((_work_item_type == WorkItemType::WORK_ITEM_TYPE_CLIMB ||
-			    _work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND ||
-			    _work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION)) {
+		} else if ((_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB ||
+			    _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND ||
+			    _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION)) {
 			_mission_item.nav_cmd = NAV_CMD_LAND;
 			_mission_item.lat = _home_pos_sub.get().lat;
 			_mission_item.lon = _home_pos_sub.get().lon;
@@ -258,7 +258,7 @@ void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
 
 			if ((_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_ROTARY_WING) &&
 			    do_need_move_to_item()) {
-				new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+				new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 				_mission_item.altitude = _global_pos_sub.get().alt;
 				_mission_item.altitude_is_relative = false;
@@ -270,12 +270,12 @@ void RtlMissionFastReverse::handleLanding(WorkItemType &new_work_item_type)
 				_mission_item.altitude = _home_pos_sub.get().alt;
 				_mission_item.altitude_is_relative = false;
 
-				_mission_item.land_precision = _param_rtl_pld_md.get();
+				// _mission_item.land_precision = _param_rtl_pld_md.get();
 
-				if (_mission_item.land_precision > 0) {
-					startPrecLand(_mission_item.land_precision);
-					new_work_item_type = WorkItemType::WORK_ITEM_TYPE_PRECISION_LAND;
-				}
+				// if (_mission_item.land_precision > 0) {
+				// 	startPrecLand(_mission_item.land_precision);
+				// 	new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_PRECISION_LAND;
+				// }
 			}
 		}
 

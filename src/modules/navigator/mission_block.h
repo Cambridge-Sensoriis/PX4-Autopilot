@@ -197,7 +197,6 @@ protected:
 
 	void setLandMissionItem(mission_item_s &item, const PositionYawSetpoint &pos_yaw_sp) const;
 
-	void startPrecLand(uint16_t land_precision);
 	void updateAltToAvoidTerrainCollisionAndRepublishTriplet(mission_item_s mission_item);
 
 	/**

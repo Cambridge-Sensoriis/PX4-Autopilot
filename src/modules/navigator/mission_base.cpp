@@ -185,12 +185,8 @@ MissionBase::on_inactivation()
 		_navigator->activate_set_gimbal_neutral_timer(hrt_absolute_time());
 	}
 
-	if (_navigator->get_precland()->is_activated()) {
-		_navigator->get_precland()->on_inactivation();
-	}
-
 	/* reset so current mission item gets restarted if mission was paused */
-	_work_item_type = WorkItemType::WORK_ITEM_TYPE_DEFAULT;
+	_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT;
 
 	/* reset so MISSION_ITEM_REACHED isn't published */
 	_navigator->get_mission_result()->seq_reached = -1;
@@ -315,7 +311,7 @@ MissionBase::on_active()
 	}
 
 	// Replay cached gimbal commands immediately upon mission resume, but only after the vehicle has reached the final target altitude
-	if (haveCachedGimbalItems() && _work_item_type != WorkItemType::WORK_ITEM_TYPE_CLIMB) {
+	if (haveCachedGimbalItems() && _work_item_type != navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB) {
 		replayCachedGimbalItems();
 	}
 
@@ -336,7 +332,7 @@ MissionBase::on_active()
 	if (_mission_type != MissionType::MISSION_TYPE_NONE && is_mission_item_reached_or_completed()) {
 		/* If we just completed a takeoff which was inserted before the right waypoint,
 		   there is no need to report that we reached it because we didn't. */
-		if (_work_item_type != WorkItemType::WORK_ITEM_TYPE_CLIMB) {
+		if (_work_item_type != navigator_mission_item_s::WORK_ITEM_TYPE_CLIMB) {
 			set_mission_item_reached();
 		}
 
@@ -356,7 +352,7 @@ MissionBase::on_active()
 		 || _mission_item.nav_cmd == NAV_CMD_DO_VTOL_TRANSITION
 		 || _mission_item.nav_cmd == NAV_CMD_LAND
 		 || _mission_item.nav_cmd == NAV_CMD_VTOL_LAND
-		 || _work_item_type == WorkItemType::WORK_ITEM_TYPE_ALIGN_HEADING)) {
+		 || _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_ALIGN_HEADING)) {
 		// Mount control is disabled If the vehicle is in ROI-mode, the vehicle
 		// needs to rotate such that ROI is in the field of view.
 		// ROI only makes sense for multicopters.
@@ -371,13 +367,6 @@ MissionBase::on_active()
 	    && (_navigator->abort_landing())) {
 
 		do_abort_landing();
-	}
-
-	if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_PRECISION_LAND) {
-		_navigator->get_precland()->on_active();
-
-	} else if (_navigator->get_precland()->is_activated()) {
-		_navigator->get_precland()->on_inactivation();
 	}
 
 	updateAltToAvoidTerrainCollisionAndRepublishTriplet(_mission_item);
@@ -453,7 +442,7 @@ void MissionBase::update_mission()
 
 	if (_navigator->get_mission_result()->valid) {
 		/* reset work item if new mission has been accepted */
-		_work_item_type = WorkItemType::WORK_ITEM_TYPE_DEFAULT;
+		_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT;
 
 		/* reset mission failure if we have an updated valid mission */
 		_navigator->get_mission_result()->failure = false;
@@ -475,7 +464,7 @@ void
 MissionBase::advance_mission()
 {
 	/* do not advance mission item if we're processing sub mission work items */
-	if (_work_item_type != WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+	if (_work_item_type != navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 		return;
 	}
 
@@ -575,7 +564,7 @@ void MissionBase::setEndOfMissionItems()
 	_navigator->get_mission_result()->finished = true;
 	_navigator->set_mission_result_updated();
 
-	publish_navigator_mission_item(); // for logging
+	publish_navigator_mission_item();
 	_navigator->set_position_setpoint_triplet_updated();
 
 	_mission_type = MissionType::MISSION_TYPE_NONE;
@@ -607,7 +596,7 @@ bool MissionBase::do_need_move_to_item()
 	return d_current > _navigator->get_acceptance_radius();
 }
 
-void MissionBase::handleLanding(WorkItemType &new_work_item_type, mission_item_s next_mission_items[],
+void MissionBase::handleLanding(uint8_t &new_work_item_type, mission_item_s next_mission_items[],
 				size_t &num_found_items)
 {
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
@@ -630,9 +619,9 @@ void MissionBase::handleLanding(WorkItemType &new_work_item_type, mission_item_s
 
 	/* move to land wp as fixed wing */
 	if (needs_vtol_landing) {
-		if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT) {
+		if (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT) {
 
-			new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+			new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 			/* use current mission item as next position item */
 			num_found_items = 1u;
@@ -655,21 +644,21 @@ void MissionBase::handleLanding(WorkItemType &new_work_item_type, mission_item_s
 		}
 
 		/* transition to MC */
-		if (_work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND) {
+		if (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND) {
 
 			set_vtol_transition_item(&_mission_item, vtol_vehicle_status_s::VEHICLE_VTOL_STATE_MC);
 
-			new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION;
+			new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION;
 		}
 
 	} else if (needs_to_land) {
 		/* move to landing waypoint before descent if necessary */
 		if ((_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_ROTARY_WING) &&
 		    do_need_move_to_item() &&
-		    (_work_item_type == WorkItemType::WORK_ITEM_TYPE_DEFAULT ||
-		     _work_item_type == WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION)) {
+		    (_work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_DEFAULT ||
+		     _work_item_type == navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND_AFTER_TRANSITION)) {
 
-			new_work_item_type = WorkItemType::WORK_ITEM_TYPE_MOVE_TO_LAND;
+			new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_MOVE_TO_LAND;
 
 			/* use current mission item as next position item */
 			num_found_items = 1u;
@@ -707,9 +696,7 @@ void MissionBase::handleLanding(WorkItemType &new_work_item_type, mission_item_s
 		} else {
 
 			if (_mission_item.land_precision > 0 && _mission_item.land_precision < 3) {
-				new_work_item_type = WorkItemType::WORK_ITEM_TYPE_PRECISION_LAND;
-
-				startPrecLand(_mission_item.land_precision);
+				new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_PRECISION_LAND;
 			}
 		}
 	}
@@ -898,7 +885,7 @@ MissionBase::do_abort_landing()
 	_navigator->get_position_setpoint_triplet()->next.lon = (double)NAN;
 	_navigator->get_position_setpoint_triplet()->next.alt = NAN;
 
-	publish_navigator_mission_item(); // for logging
+	publish_navigator_mission_item();
 	_navigator->set_position_setpoint_triplet_updated();
 
 	mavlink_log_info(_navigator->get_mavlink_log_pub(), "Holding at %d m above landing waypoint.\t",
@@ -933,6 +920,7 @@ void MissionBase::publish_navigator_mission_item()
 
 	navigator_mission_item.sequence_current = _mission.current_seq;
 	navigator_mission_item.nav_cmd = _mission_item.nav_cmd;
+	navigator_mission_item.nav_sub_cmd = _work_item_type;
 	navigator_mission_item.latitude = _mission_item.lat;
 	navigator_mission_item.longitude = _mission_item.lon;
 	navigator_mission_item.altitude = _mission_item.altitude;

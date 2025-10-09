@@ -43,7 +43,6 @@
 
 #include "geofence.h"
 #include "land.h"
-#include "precland.h"
 #include "loiter.h"
 #include "mission.h"
 #include "navigator_mode.h"
@@ -95,7 +94,7 @@ using namespace time_literals;
 /**
  * Number of navigation modes that need on_active/on_inactive calls
  */
-#define NAVIGATOR_MODE_ARRAY_SIZE 8
+#define NAVIGATOR_MODE_ARRAY_SIZE 6
 
 class Navigator : public ModuleBase<Navigator>, public ModuleParams
 {
@@ -166,8 +165,6 @@ public:
 	vehicle_land_detected_s     *get_land_detected() { return &_land_detected; }
 	vehicle_local_position_s    *get_local_position() { return &_local_pos; }
 	vehicle_status_s            *get_vstatus() { return &_vstatus; }
-
-	PrecLand *get_precland() { return &_precland; } /**< allow others, e.g. Mission, to use the precision land block */
 
 	const vehicle_roi_s &get_vroi() { return _vroi; }
 
@@ -374,7 +371,6 @@ private:
 	VtolTakeoff	_vtol_takeoff;			/**< class for handling VEHICLE_CMD_NAV_VTOL_TAKEOFF command */
 #endif //CONFIG_MODE_NAVIGATOR_VTOL_TAKEOFF
 	Land		_land;			/**< class for handling land commands */
-	PrecLand	_precland;			/**< class for handling precision land commands */
 	RTL 		_rtl;				/**< class that handles RTL */
 #if CONFIG_NAVIGATOR_ADSB
 	AdsbConflict 	_adsb_conflict;			/**< class that handles ADSB conflict avoidance */
