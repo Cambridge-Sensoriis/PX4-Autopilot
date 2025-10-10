@@ -516,7 +516,7 @@ const position_setpoint_s *VisionTargetEst::findLandSetpoint()
 
 bool VisionTargetEst::isNewTaskAvailable()
 {
-	if (_vte_task_mask.flags.for_prec_land && /*_is_in_prec_land*/ true) {
+	if (_vte_task_mask.flags.for_prec_land && _is_in_prec_land) {
 
 		// Precision land task already running
 		if (_current_task.flags.for_prec_land) {
@@ -559,17 +559,17 @@ bool VisionTargetEst::isCurrentTaskComplete()
 			return true;
 		}
 
-		vehicle_land_detected_s vehicle_land_detected;
+		// vehicle_land_detected_s vehicle_land_detected;
 
-		// Stop computations once the drone has landed
-		if (_vehicle_land_detected_sub.update(&vehicle_land_detected) && vehicle_land_detected.landed) {
-			PX4_INFO("Land detected, precision landing task completed.");
-			_is_in_prec_land = false;
-			return true;
-		}
+		// // Stop computations once the drone has landed
+		// if (_vehicle_land_detected_sub.update(&vehicle_land_detected) && vehicle_land_detected.landed) {
+		// 	PX4_INFO("Land detected, precision landing task completed.");
+		// 	_is_in_prec_land = false;
+		// 	return true;
+		// }
 
 		// Stop computations once precision landing is over
-		if (false /*!_is_in_prec_land*/) {
+		if (!_is_in_prec_land) {
 			PX4_INFO("Precision landing task completed.");
 			return true;
 		}
@@ -594,10 +594,10 @@ void VisionTargetEst::updateTaskTopics()
 #if !defined(CONSTRAINED_FLASH)
 
 	if (_vte_task_mask.flags.for_prec_land) {
-		precision_landing_status_s prec_land_status;
+		prec_land_status_s prec_land_status;
 
-		if (_precision_landing_status_sub.update(&prec_land_status)) {
-			_is_in_prec_land = true; //prec_land_status.state == precision_landing_status_s::PREC_LAND_STATE_ONGOING;
+		if (_prec_land_status_sub.update(&prec_land_status)) {
+			_is_in_prec_land = prec_land_status.state == prec_land_status_s::PREC_LAND_STATE_ONGOING;
 		}
 	}
 

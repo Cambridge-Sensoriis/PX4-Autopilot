@@ -42,7 +42,9 @@
 #include "FlightTask.hpp"
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/landing_target_pose.h>
-#include <uORB/topics/precision_landing_status.h>
+// #include <uORB/topics/precision_landing_status.h>
+#include <uORB/topics/prec_land_status.h>
+#include <uORB/topics/vehicle_land_detected.h>
 // #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <systemlib/mavlink_log.h>
 #include <uORB/topics/follow_target_estimator.h>
@@ -73,21 +75,22 @@ private:
 					(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch,
 					(ParamFloat<px4::params::PLD_HACC_RAD>) _param_pld_hacc_rad,
 					(ParamFloat<px4::params::PLD_BTOUT>) _param_pld_btout,
+					(ParamFloat<px4::params::PLD_FAPPR_ALT>) _param_pld_fappr_alt,
 					(ParamFloat<px4::params::RTL_RETURN_ALT>) _param_rtl_return_alt,
 					(ParamFloat<px4::params::NAV_MC_ALT_RAD>) _param_nav_mc_alt_rad
 				       )
 
-	enum PRECLAND_STATE {
-		AUTORTL_CLIMB,
-		AUTORTL_APPROACH,
-		MOVE_TO_SEARCH_ALTITUDE,
-		SEARCHING_TARGET,
-		MOVING_ABOVE_TARGET,
-		LANDING_ON_TARGET,
-		FALLBACK_LAND
+	enum class PrecLandState: uint8_t{
+		Start = prec_land_status_s::PREC_LAND_NAV_STATE_START,
+		Horizontal = prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL,
+		Descend = prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND,
+		Final = prec_land_status_s::PREC_LAND_NAV_STATE_FINAL,
+		Search = prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH,
+		Fallback = prec_land_status_s::PREC_LAND_NAV_STATE_FALLBACK,
+		Done = prec_land_status_s::PREC_LAND_NAV_STATE_DONE
 	};
 
-	void do_state_transition(PRECLAND_STATE new_state);
+	void do_state_transition(uint8_t new_state);
 
 	bool inside_acceptance_radius();
 
@@ -102,15 +105,17 @@ private:
 
 	void check_state_transitions();
 
-	PRECLAND_STATE _precland_state;
+	prec_land_status_s _precland_state;
 
+	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 	uORB::Subscription _landing_target_pose_sub{ORB_ID(landing_target_pose)};
 	landing_target_pose_s _landing_target_pose{}; /**< precision landing target position */
 
-	uORB::PublicationMulti<precision_landing_status_s> _precision_landing_status_pub{ORB_ID(precision_landing_status)};
+	uORB::PublicationMulti<prec_land_status_s> _prec_land_status_pub{ORB_ID(prec_land_status)};
 
 	uint64_t _state_start_time{0}; /**< time when entering search state */
 	int _search_count = 0;
+	bool _land_detected = false;
 	float _initial_yaw;
 	float _target_yaw;
 	matrix::Vector3f _initial_position;

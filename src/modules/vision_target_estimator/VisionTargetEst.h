@@ -60,7 +60,7 @@
 #include <uORB/topics/vehicle_angular_velocity.h>
 #include <uORB/topics/position_setpoint_triplet.h>
 #if !defined(CONSTRAINED_FLASH)
-#include <uORB/topics/precision_landing_status.h>
+#include <uORB/topics/prec_land_status.h>
 #endif
 
 #include <parameters/param.h>
@@ -166,7 +166,7 @@ private:
 	uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
 	uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
 #if !defined(CONSTRAINED_FLASH)
-	uORB::Subscription _precision_landing_status_sub{ORB_ID(precision_landing_status)};
+	uORB::Subscription _prec_land_status_sub{ORB_ID(prec_land_status)};
 #endif
 
 	uORB::Publication<vision_target_est_input_s> _vision_target_est_input_pub{ORB_ID(vision_target_est_input)};
