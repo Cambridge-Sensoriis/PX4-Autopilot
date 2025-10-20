@@ -106,6 +106,7 @@ private:
 	void check_state_transitions();
 
 	prec_land_status_s _precland_state;
+	vehicle_land_detected_s vehicle_land_detected;
 
 	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 	uORB::Subscription _landing_target_pose_sub{ORB_ID(landing_target_pose)};

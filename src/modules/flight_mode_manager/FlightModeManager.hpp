@@ -130,6 +130,7 @@ private:
 
 	int8_t _old_landing_gear_position{landing_gear_s::GEAR_KEEP};
 	uint8_t _takeoff_state{takeoff_status_s::TAKEOFF_STATE_UNINITIALIZED};
+	bool _land_detected{false};
 
 	bool _no_matching_task_error_printed{false};
 

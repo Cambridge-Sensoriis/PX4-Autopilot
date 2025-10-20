@@ -156,10 +156,19 @@ void FlightTaskPrecisionLanding::generate_vel_setpoints()
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
+		// _velocity_setpoint(0) = 0;
+		// _velocity_setpoint(1) = 0;
+		_velocity_setpoint(0) = _velocity(0) + _landing_target_pose.vx_rel;
+		_velocity_setpoint(1) = _velocity(1) + _landing_target_pose.vy_rel;
+		_velocity_setpoint(2) = NAN;
+		break;
+
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
-		_velocity_setpoint(0) = 0;
-		_velocity_setpoint(1) = 0;
+		// _velocity_setpoint(0) = 0;
+		// _velocity_setpoint(1) = 0;
+		_velocity_setpoint(0) = _velocity(0) + _landing_target_pose.vx_rel;
+		_velocity_setpoint(1) = _velocity(1) + _landing_target_pose.vy_rel;
 		_velocity_setpoint(2) = _param_mpc_land_speed.get();
 		break;
 
@@ -282,9 +291,6 @@ bool FlightTaskPrecisionLanding::update()
 	if (_landing_target_pose_sub.updated()) {
 		_landing_target_pose_sub.copy(&_landing_target_pose);
 	}
-
-	// TODO refactor
-	vehicle_land_detected_s vehicle_land_detected;
 
 	if (_vehicle_land_detected_sub.update(&vehicle_land_detected) && vehicle_land_detected.landed) {
 		_land_detected = true;

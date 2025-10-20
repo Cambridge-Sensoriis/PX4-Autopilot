@@ -168,7 +168,7 @@ void FlightModeManager::start_flight_task()
 	bool matching_task_running = true;
 	// bool task_failure = false;
 	const bool nav_state_descend = (_vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_DESCEND);
-	const bool precland_mode = (land_should_be_precland || precland_mission_item_active || precland_flight_mode);
+	const bool precland_flag = (land_should_be_precland || precland_mission_item_active || precland_flight_mode);
 
 	// Follow me
 	if (_vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET) {
@@ -187,7 +187,7 @@ void FlightModeManager::start_flight_task()
 	}
 
 	// PrecLand
-	if (precland_mode) {
+	if (precland_flag) {
 		// Take-over landing from navigator if precision landing is enabled
 		found_some_task = true;
 
@@ -215,7 +215,7 @@ void FlightModeManager::start_flight_task()
 
 	// Navigator interface for autonomous modes
 	if (_vehicle_control_mode_sub.get().flag_control_auto_enabled
-	    && !nav_state_descend && !precland_mode) {
+	    && !nav_state_descend && !precland_flag) {
 		found_some_task = true;
 
 		if (switchTask(FlightTaskIndex::Auto) != FlightTaskError::NoError) {
@@ -379,7 +379,15 @@ void FlightModeManager::generateTrajectorySetpoint(const float dt,
 		}
 	}
 
-	if (_takeoff_state < takeoff_status_s::TAKEOFF_STATE_RAMPUP) {
+	vehicle_land_detected_s vehicle_land_detected;
+
+	if (_vehicle_land_detected_sub.copy(&vehicle_land_detected)) {
+		_land_detected = vehicle_land_detected.landed;
+	}
+
+
+
+	if (_takeoff_state < takeoff_status_s::TAKEOFF_STATE_RAMPUP && !_land_detected) {
 		// reactivate the task which will reset the setpoint to current state
 		_current_task.task->reActivate();
 	}
