@@ -276,7 +276,10 @@ void FlightTaskPrecisionLanding::check_state_transitions()
 			PX4_INFO("Transitioning to Done");
 			do_state_transition(prec_land_status_s::PREC_LAND_NAV_STATE_DONE);
 		}
+		break;
+
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DONE:
+		_precland_state.state = prec_land_status_s::PREC_LAND_STATE_STOPPED;
 		break;
 	}
 }

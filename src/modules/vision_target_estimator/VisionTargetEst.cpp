@@ -561,8 +561,9 @@ bool VisionTargetEst::isCurrentTaskComplete()
 
 		// vehicle_land_detected_s vehicle_land_detected;
 
-		// // Stop computations once the drone has landed
+		// Stop computations once the drone has landed
 		// if (_vehicle_land_detected_sub.update(&vehicle_land_detected) && vehicle_land_detected.landed) {
+
 		// 	PX4_INFO("Land detected, precision landing task completed.");
 		// 	_is_in_prec_land = false;
 		// 	return true;
