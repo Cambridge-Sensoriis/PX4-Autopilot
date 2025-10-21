@@ -42,9 +42,9 @@
 #include "FlightTask.hpp"
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/landing_target_pose.h>
-// #include <uORB/topics/precision_landing_status.h>
 #include <uORB/topics/prec_land_status.h>
 #include <uORB/topics/vehicle_land_detected.h>
+#include <uORB/topics/vision_target_est_orientation.h>
 // #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <systemlib/mavlink_log.h>
 #include <uORB/topics/follow_target_estimator.h>
@@ -102,6 +102,7 @@ private:
 	void generate_vel_setpoints();
 	void generate_acc_setpoints();
 	void generate_yaw_setpoint();
+	void generate_yaw_rate_setpoint();
 
 	void check_state_transitions();
 
@@ -110,7 +111,13 @@ private:
 
 	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 	uORB::Subscription _landing_target_pose_sub{ORB_ID(landing_target_pose)};
+#if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
+	uORB::Subscription _vision_target_est_orientation_sub{ORB_ID(vision_target_est_orientation)};
+	vision_target_est_orientation_s _vte_est_orientation{}; /**< precision landing target orientation */
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+
 	landing_target_pose_s _landing_target_pose{}; /**< precision landing target position */
+
 
 	uORB::PublicationMulti<prec_land_status_s> _prec_land_status_pub{ORB_ID(prec_land_status)};
 
@@ -118,6 +125,7 @@ private:
 	int _search_count = 0;
 	bool _land_detected = false;
 	float _initial_yaw;
+	float _initial_yawspeed;
 	float _target_yaw;
 	matrix::Vector3f _initial_position;
 

@@ -52,6 +52,7 @@ bool FlightTaskPrecisionLanding::activate(const trajectory_setpoint_s &last_setp
 	_position_setpoint = _position;
 
 	_initial_yaw = _yaw;
+	_initial_yawspeed = 0;
 	_initial_position = _position;
 
 	// _is_activated = true;
@@ -203,9 +204,35 @@ void FlightTaskPrecisionLanding::generate_yaw_setpoint()
 	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
+#if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
+		_yaw_setpoint = _vte_est_orientation.theta;
+		break;
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	case prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FALLBACK:
 		_yaw_setpoint = _target_yaw;
+		break;
+
+	case prec_land_status_s::PREC_LAND_NAV_STATE_DONE:
+		break;
+	}
+}
+
+void FlightTaskPrecisionLanding::generate_yaw_rate_setpoint()
+{
+
+	switch (_precland_state.nav_state) {
+	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
+	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
+	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
+#if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
+		_yawspeed_setpoint = _vte_est_orientation.v_theta;
+		break;
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+	case prec_land_status_s::PREC_LAND_NAV_STATE_START:
+	case prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH:
+	case prec_land_status_s::PREC_LAND_NAV_STATE_FALLBACK:
+		_yawspeed_setpoint = NAN;
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DONE:
@@ -312,6 +339,7 @@ bool FlightTaskPrecisionLanding::update()
 	generate_vel_setpoints();
 	generate_acc_setpoints();
 	generate_yaw_setpoint();
+	generate_yaw_rate_setpoint();
 	check_state_transitions();
 
 	prec_land_status_s prec_land_status{};
