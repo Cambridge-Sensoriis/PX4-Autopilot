@@ -205,7 +205,13 @@ void FlightTaskPrecisionLanding::generate_yaw_setpoint()
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
-		_yaw_setpoint = _vte_est_orientation.theta;
+		if (_param_pld_yaw_en.get()) {
+			_yaw_setpoint = _vte_est_orientation.theta;
+		}
+		else {
+			_yaw_setpoint = _target_yaw;
+		}
+
 		break;
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	case prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH:

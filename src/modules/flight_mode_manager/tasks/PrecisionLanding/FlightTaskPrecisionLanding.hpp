@@ -76,6 +76,7 @@ private:
 					(ParamFloat<px4::params::PLD_HACC_RAD>) _param_pld_hacc_rad,
 					(ParamFloat<px4::params::PLD_BTOUT>) _param_pld_btout,
 					(ParamFloat<px4::params::PLD_FAPPR_ALT>) _param_pld_fappr_alt,
+					(ParamInt<px4::params::PLD_YAW_EN>) _param_pld_yaw_en,
 					(ParamFloat<px4::params::RTL_RETURN_ALT>) _param_rtl_return_alt,
 					(ParamFloat<px4::params::NAV_MC_ALT_RAD>) _param_nav_mc_alt_rad
 				       )
