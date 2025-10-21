@@ -156,19 +156,27 @@ void FlightTaskPrecisionLanding::generate_vel_setpoints()
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
-		// _velocity_setpoint(0) = 0;
-		// _velocity_setpoint(1) = 0;
+		_velocity_setpoint(0) = 0;
+		_velocity_setpoint(1) = 0;
+
+#if defined(CONFIG_VTEST_MOVING)
 		_velocity_setpoint(0) = _velocity(0) + _landing_target_pose.vx_rel;
 		_velocity_setpoint(1) = _velocity(1) + _landing_target_pose.vy_rel;
+#endif // CONFIG_VTEST_MOVING
+
 		_velocity_setpoint(2) = NAN;
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
-		// _velocity_setpoint(0) = 0;
-		// _velocity_setpoint(1) = 0;
+		_velocity_setpoint(0) = 0;
+		_velocity_setpoint(1) = 0;
+
+#if defined(CONFIG_VTEST_MOVING)
 		_velocity_setpoint(0) = _velocity(0) + _landing_target_pose.vx_rel;
 		_velocity_setpoint(1) = _velocity(1) + _landing_target_pose.vy_rel;
+#endif // CONFIG_VTEST_MOVING
+
 		_velocity_setpoint(2) = _param_mpc_land_speed.get();
 		break;
 
