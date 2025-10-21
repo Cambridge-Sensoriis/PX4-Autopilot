@@ -194,29 +194,29 @@ void FlightTaskPrecisionLanding::generate_acc_setpoints()
 
 void FlightTaskPrecisionLanding::generate_yaw_setpoint()
 {
-
+	_yaw_setpoint = NAN;
 	switch (_precland_state.nav_state) {
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_START:
-		_yaw_setpoint = _initial_yaw;
+		_yaw_setpoint = NAN;
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
-		if (_param_pld_yaw_en.get()) {
+		if (_param_pld_yaw_en.get() == 1) {
 			_yaw_setpoint = _vte_est_orientation.theta;
 		}
 		else {
-			_yaw_setpoint = _target_yaw;
+			_yaw_setpoint = NAN;
 		}
 
 		break;
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	case prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH:
 	case prec_land_status_s::PREC_LAND_NAV_STATE_FALLBACK:
-		_yaw_setpoint = _target_yaw;
+		_yaw_setpoint = NAN;
 		break;
 
 	case prec_land_status_s::PREC_LAND_NAV_STATE_DONE:
@@ -226,24 +226,7 @@ void FlightTaskPrecisionLanding::generate_yaw_setpoint()
 
 void FlightTaskPrecisionLanding::generate_yaw_rate_setpoint()
 {
-
-	switch (_precland_state.nav_state) {
-	case prec_land_status_s::PREC_LAND_NAV_STATE_HORIZONTAL:
-	case prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND:
-	case prec_land_status_s::PREC_LAND_NAV_STATE_FINAL:
-#if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
-		_yawspeed_setpoint = _vte_est_orientation.v_theta;
-		break;
-#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
-	case prec_land_status_s::PREC_LAND_NAV_STATE_START:
-	case prec_land_status_s::PREC_LAND_NAV_STATE_SEARCH:
-	case prec_land_status_s::PREC_LAND_NAV_STATE_FALLBACK:
-		_yawspeed_setpoint = NAN;
-		break;
-
-	case prec_land_status_s::PREC_LAND_NAV_STATE_DONE:
-		break;
-	}
+	_yawspeed_setpoint = NAN;
 }
 
 void FlightTaskPrecisionLanding::check_state_transitions()
