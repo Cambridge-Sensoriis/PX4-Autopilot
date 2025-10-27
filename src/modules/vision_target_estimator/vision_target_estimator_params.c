@@ -107,9 +107,10 @@ PARAM_DEFINE_INT32(VTE_AID_MASK, 14);
  *
  * @group Vision Target Estimator
  * @min 0
- * @max 3
+ * @max 7
  * @bit 0 precision landing
- * @bit 1 DEBUG, always active
+ * @bit 1 precision tether
+ * @bit 2 DEBUG, always active
  *
  *
  * @group Vision Target Estimator

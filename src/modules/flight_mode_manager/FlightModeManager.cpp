@@ -139,16 +139,14 @@ void FlightModeManager::start_flight_task()
 	bool task_failure = false;
 
 	const bool land_should_be_precland = (_vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_RTL
-					      ||
-					      _vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_LAND)
+					      || _vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_LAND)
 					     && _param_rtl_pld_md.get() > 0;
 
-	const bool precland_mission_item_active = _vehicle_status_sub.get().nav_state ==
-			vehicle_status_s::NAVIGATION_STATE_AUTO_MISSION &&
+	const bool precland_mission_item_active = _vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_MISSION &&
 			_navigator_mission_item_sub.get().nav_sub_cmd == navigator_mission_item_s::WORK_ITEM_TYPE_PRECISION_LAND;
 
-	const bool precland_flight_mode = (int)_vehicle_status_sub.get().nav_state ==
-					  int(vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND);
+	const bool precision_flight_mode = _vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND
+					|| _vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER;
 
 	// Do not run any flight task for VTOLs in fixed-wing mode
 	if ((_vehicle_status_sub.get().vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING)
@@ -168,7 +166,7 @@ void FlightModeManager::start_flight_task()
 	bool matching_task_running = true;
 	// bool task_failure = false;
 	const bool nav_state_descend = (_vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_DESCEND);
-	const bool precland_flag = (land_should_be_precland || precland_mission_item_active || precland_flight_mode);
+	const bool precision_flag = (land_should_be_precland || precland_mission_item_active || precision_flight_mode);
 
 	// Follow me
 	if (_vehicle_status_sub.get().nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET) {
@@ -186,8 +184,8 @@ void FlightModeManager::start_flight_task()
 
 	}
 
-	// PrecLand
-	if (precland_flag) {
+	// PrecLand or PrecTether
+	if (precision_flag) {
 		// Take-over landing from navigator if precision landing is enabled
 		found_some_task = true;
 
@@ -215,7 +213,7 @@ void FlightModeManager::start_flight_task()
 
 	// Navigator interface for autonomous modes
 	if (_vehicle_control_mode_sub.get().flag_control_auto_enabled
-	    && !nav_state_descend && !precland_flag) {
+	    && !nav_state_descend && !precision_flag) {
 		found_some_task = true;
 
 		if (switchTask(FlightTaskIndex::Auto) != FlightTaskError::NoError) {

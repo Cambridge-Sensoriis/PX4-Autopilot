@@ -235,6 +235,8 @@ void VisionTargetEst::updateParams()
 
 			if (_vte_task_mask.flags.for_prec_land) { PX4_INFO("    Precision landing"); }
 
+			if (_vte_task_mask.flags.for_prec_tether) { PX4_INFO("    Precision tether"); }
+
 			if (_vte_task_mask.flags.debug) { PX4_WARN("    DEBUG, always active"); }
 		}
 	}
@@ -492,6 +494,11 @@ bool VisionTargetEst::startPosEst()
 		}
 	}
 
+	if (_current_task.flags.for_prec_tether) {
+		// We want to ignore mission_position
+		_vte_position.set_mission_position(0.0, 0.0, NAN);
+	}
+
 	return true;
 }
 
@@ -528,6 +535,20 @@ bool VisionTargetEst::isNewTaskAvailable()
 		new_task.flags.for_prec_land = 1;
 		_current_task = new_task;
 		return true;
+
+	} else if (_vte_task_mask.flags.for_prec_tether && _is_in_prec_tether) {
+
+		// Precision tether task already running
+		if (_current_task.flags.for_prec_tether) {
+			return false;
+		}
+
+		PX4_INFO("VTE, precision tether task requested.");
+		VisionTargetEstTaskMaskU new_task{};
+		new_task.flags.for_prec_tether = 1;
+		_current_task = new_task;
+		return true;
+
 
 	} else if (_vte_task_mask.flags.debug) {
 
@@ -575,6 +596,17 @@ bool VisionTargetEst::isCurrentTaskComplete()
 			return true;
 		}
 
+	} else if (_current_task.flags.for_prec_tether) {
+		if (!_vte_task_mask.flags.for_prec_tether) {
+			PX4_INFO("VTE_TASK_MASK updated, precision tether task completed.");
+			return true;
+		}
+
+		if (!_is_in_prec_tether) {
+			PX4_INFO("Precision tether task completed.");
+			return true;
+		}
+
 	} else if (_current_task.flags.debug) {
 
 		if (!_vte_task_mask.flags.debug) {
@@ -599,6 +631,13 @@ void VisionTargetEst::updateTaskTopics()
 
 		if (_prec_land_status_sub.update(&prec_land_status)) {
 			_is_in_prec_land = prec_land_status.state == prec_land_status_s::PREC_LAND_STATE_ONGOING;
+		}
+
+	} else if (_vte_task_mask.flags.for_prec_tether) {
+		prec_land_status_s prec_land_status;
+
+		if (_prec_land_status_sub.update(&prec_land_status)) {
+			_is_in_prec_tether = prec_land_status.state == prec_land_status_s::PREC_LAND_STATE_TETHERED;
 		}
 	}
 

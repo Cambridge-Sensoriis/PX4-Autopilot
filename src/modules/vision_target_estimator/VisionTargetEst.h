@@ -177,15 +177,17 @@ private:
 
 	union VisionTargetEstTaskMaskU {
 		struct {
-			uint8_t for_prec_land : 1; ///< bit0: precision landing task active
-			uint8_t debug         : 1; ///< bit1: debug task active
-			uint8_t reserved      : 6; ///< bits2..7: reserved for future use
+			uint8_t for_prec_land 	: 1; ///< bit0: precision landing task active
+			uint8_t for_prec_tether	: 1; ///< bit1: precision tether task active
+			uint8_t debug         	: 1; ///< bit2: debug task active
+			uint8_t reserved      	: 6; ///< bits3..7: reserved for future use
 		} flags;
 
 		uint8_t value{0};
 	};
 
-	static_assert(sizeof(VisionTargetEstTaskMaskU) == 1, "Unexpected task mask size");
+	// TODO Fix this
+	static_assert(sizeof(VisionTargetEstTaskMaskU) == 2, "Unexpected task mask size");
 
 	VisionTargetEstTaskMaskU _current_task{};
 	VisionTargetEstTaskMaskU _vte_task_mask{};
@@ -193,6 +195,7 @@ private:
 	bool _position_estimator_running{false};
 	bool _orientation_estimator_running{false};
 	bool _is_in_prec_land{false}; // Start target estimator during precision landing
+	bool _is_in_prec_tether{false}; // Start target estimator during precision tether
 	uint64_t _vte_position_stop_time{0};
 	uint64_t _vte_orientation_stop_time{0};
 

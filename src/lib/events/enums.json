@@ -608,6 +608,10 @@
                             "name": "altitude_cruise",
                             "description": "Altitude Cruise"
                         },
+                        "25": {
+                            "name": "auto_prectether",
+                            "description": "Precision Tether"
+                        },
                         "255": {
                             "name": "unknown",
                             "description": "[Unknown]"
