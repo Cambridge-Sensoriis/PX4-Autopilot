@@ -270,12 +270,11 @@ void RtlMissionFastReverse::handleLanding(uint8_t &new_work_item_type)
 				_mission_item.altitude = _home_pos_sub.get().alt;
 				_mission_item.altitude_is_relative = false;
 
-				// _mission_item.land_precision = _param_rtl_pld_md.get();
+				_mission_item.land_precision = _param_rtl_pld_md.get();
 
-				// if (_mission_item.land_precision > 0) {
-				// 	startPrecLand(_mission_item.land_precision);
-				// 	new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_PRECISION_LAND;
-				// }
+				if (_mission_item.land_precision > 0) {
+					new_work_item_type = navigator_mission_item_s::WORK_ITEM_TYPE_PRECISION_LAND;
+				}
 			}
 		}
 

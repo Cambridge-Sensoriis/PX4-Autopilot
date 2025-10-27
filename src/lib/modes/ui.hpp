@@ -85,7 +85,7 @@ const char *const nav_state_names[vehicle_status_s::NAVIGATION_STATE_MAX] = {
 	"Termination",
 	"Offboard",
 	"Stabilized",
-	"Precision Teteher",
+	"Precision Tether",
 	"Takeoff",
 	"Land",
 	"Follow Target",

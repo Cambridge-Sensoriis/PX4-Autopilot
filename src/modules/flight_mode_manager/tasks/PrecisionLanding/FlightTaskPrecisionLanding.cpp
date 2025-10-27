@@ -249,8 +249,11 @@ void FlightTaskPrecisionLanding::check_state_transitions()
 		if (inside_acceptance_radius()){
 			// Only transition to PREC_LAND_NAV_STATE_DESCEND if we still see target
 			if (precision_target_available()){
-				PX4_INFO("Transitioning to Descend");
-				do_state_transition(prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND);
+				// Only transition if we are in precision landing, tethering should ignore.
+				if (!_is_prec_tether){
+					PX4_INFO("Transitioning to Descend");
+					do_state_transition(prec_land_status_s::PREC_LAND_NAV_STATE_DESCEND);
+				}
 			}
 			else {
 				// we've reached the position where we last saw the target, move to search.
@@ -318,6 +321,18 @@ bool FlightTaskPrecisionLanding::update()
 	if (_landing_target_pose_sub.updated()) {
 		_landing_target_pose_sub.copy(&_landing_target_pose);
 	}
+
+	if (_vehicle_status_sub.updated()) {
+		_vehicle_status_sub.copy(&_vehicle_status);
+
+		if (_vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER) {
+			_is_prec_tether = true;
+
+		} else if (_vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND) {
+			_is_prec_tether = false;
+		}
+	}
+
 
 	if (_vehicle_land_detected_sub.update(&vehicle_land_detected) && vehicle_land_detected.landed) {
 		_land_detected = true;

@@ -45,6 +45,7 @@
 #include <uORB/topics/prec_land_status.h>
 #include <uORB/topics/vehicle_land_detected.h>
 #include <uORB/topics/vision_target_est_orientation.h>
+#include <uORB/topics/vehicle_status.h>
 // #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <systemlib/mavlink_log.h>
 #include <uORB/topics/follow_target_estimator.h>
@@ -107,24 +108,27 @@ private:
 
 	void check_state_transitions();
 
+
 	prec_land_status_s _precland_state;
 	vehicle_land_detected_s vehicle_land_detected;
 
 	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 	uORB::Subscription _landing_target_pose_sub{ORB_ID(landing_target_pose)};
+	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR)
 	uORB::Subscription _vision_target_est_orientation_sub{ORB_ID(vision_target_est_orientation)};
 	vision_target_est_orientation_s _vte_est_orientation{}; /**< precision landing target orientation */
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
 	landing_target_pose_s _landing_target_pose{}; /**< precision landing target position */
-
+	vehicle_status_s _vehicle_status{};
 
 	uORB::PublicationMulti<prec_land_status_s> _prec_land_status_pub{ORB_ID(prec_land_status)};
 
 	uint64_t _state_start_time{0}; /**< time when entering search state */
 	int _search_count = 0;
 	bool _land_detected = false;
+	bool _is_prec_tether = false;
 	float _initial_yaw;
 	float _initial_yawspeed;
 	float _target_yaw;
