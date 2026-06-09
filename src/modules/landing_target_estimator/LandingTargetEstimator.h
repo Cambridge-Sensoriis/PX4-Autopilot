@@ -51,9 +51,10 @@
 #include <uORB/topics/vehicle_acceleration.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
-#include <uORB/topics/irlock_report.h>
+#include <uORB/topics/landing_target_report.h>
 #include <uORB/topics/landing_target_pose.h>
 #include <uORB/topics/landing_target_innovations.h>
+#include <uORB/topics/irlock_report.h>
 #include <uORB/topics/parameter_update.h>
 #include <matrix/math.hpp>
 #include <mathlib/mathlib.h>
@@ -149,22 +150,26 @@ private:
 	uORB::Subscription _vehicleLocalPositionSub{ORB_ID(vehicle_local_position)};
 	uORB::Subscription _attitudeSub{ORB_ID(vehicle_attitude)};
 	uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
+	uORB::Subscription _landingTargetReportSub{ORB_ID(landing_target_report)};
 	uORB::Subscription _irlockReportSub{ORB_ID(irlock_report)};
 
 	vehicle_local_position_s	_vehicleLocalPosition{};
 	vehicle_attitude_s		_vehicleAttitude{};
 	vehicle_acceleration_s		_vehicle_acceleration{};
+	landing_target_report_s		_landingTargetReport{};
 	irlock_report_s			_irlockReport{};
 
 	// keep track of which topics we have received
 	bool _vehicleLocalPosition_valid{false};
 	bool _vehicleAttitude_valid{false};
 	bool _vehicle_acceleration_valid{false};
-	bool _new_irlockReport{false};
-	bool _new_sensorReport{false};
+	// Set true when either irlock_report or landing_target_report produced a valid measurement.
+	bool _new_target_measurement{false};
 	bool _estimator_initialized{false};
 	// keep track of whether last measurement was rejected
 	bool _faulty{false};
+	// ArduPilot-style forced fusion: count consecutive rejections
+	uint32_t _consecutive_rejections{0};
 
 	matrix::Dcmf _R_att; //Orientation of the body frame
 	matrix::Dcmf _S_att; //Orientation of the sensor relative to body frame
@@ -176,7 +181,7 @@ private:
 	float _dist_z{1.0f};
 
 	void _check_params(const bool force);
-
+	bool _process_angle_measurement(float angle_x, float angle_y, hrt_abstime timestamp);
 	void _update_state();
 };
 } // namespace landing_target_estimator
