@@ -330,6 +330,7 @@ PrecLand::run_state_horizontal_approach()
 
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
+	update_current_vel_setpoint();
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
 	_navigator->set_position_setpoint_triplet_updated();
@@ -360,13 +361,18 @@ PrecLand::run_state_descend_above_target()
 
 	const matrix::Vector2f target_position_sp = get_target_position_setpoint();
 
+	float x = target_position_sp(0);
+	float y = target_position_sp(1);
+
+	slewrate(x, y);
+
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
-	_map_ref.reproject(target_position_sp(0), target_position_sp(1), pos_sp_triplet->current.lat,
-			   pos_sp_triplet->current.lon);
+	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_LAND;
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
+	update_current_vel_setpoint();
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
 	_navigator->set_position_setpoint_triplet_updated();
@@ -685,7 +691,7 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 			      sp_y))).length());
 	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
-	if (sp_vel.length() > max_spd) {
+	if ((sp_vel.length() > max_spd) && (!_param_pld_mov_en.get() || _target_pose.is_static)) {
 		sp_vel = sp_vel.normalized() * max_spd;
 		sp_curr = _sp_pev + sp_vel * dt;
 	}
@@ -715,6 +721,19 @@ void PrecLand::reset_target_yaw_state()
 	_target_yaw = 0.f;
 	_target_yaw_valid = false;
 	_last_target_yaw_update = 0;
+}
+
+void PrecLand::update_current_vel_setpoint()
+{
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	if (_param_pld_mov_en.get() && _target_pose.rel_vel_valid) {
+		pos_sp_triplet->current.vx = _target_pose.vx_rel;
+		pos_sp_triplet->current.vy = _target_pose.vy_rel;
+	} else {
+		pos_sp_triplet->current.vx = NAN;
+		pos_sp_triplet->current.vy = NAN;
+	}
 }
 
 uint8_t PrecLand::map_prec_land_state(PrecLandState state)

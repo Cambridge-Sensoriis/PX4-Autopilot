@@ -150,6 +150,7 @@ protected:
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 					(ParamInt<px4::params::PLD_YAW_EN>) _param_pld_yaw_en,
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+					(ParamInt<px4::params::PLD_MOV_EN>) _param_pld_mov_en,
 					(ParamFloat<px4::params::MPC_XY_CRUISE>) _param_mpc_xy_cruise,
 					(ParamFloat<px4::params::NAV_MC_ALT_RAD>)
 					_param_nav_mc_alt_rad, //vertical acceptance radius at which waypoints are updated

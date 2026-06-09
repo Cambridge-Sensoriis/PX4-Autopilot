@@ -127,6 +127,7 @@ private:
 
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	void update_current_yaw_setpoint();
+	void update_current_vel_setpoint();
 	void reset_target_yaw_state();
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
@@ -174,6 +175,7 @@ private:
 		(ParamFloat<px4::params::PLD_MOVING_T_MIN>) _param_pld_moving_t_min,
 # endif // CONFIG_VTEST_MOVING
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+		(ParamInt<px4::params::PLD_MOV_EN>) _param_pld_mov_en,
 		(ParamFloat<px4::params::PLD_BTOUT>) _param_pld_btout,
 		(ParamFloat<px4::params::PLD_HACC_RAD>) _param_pld_hacc_rad,
 		(ParamFloat<px4::params::PLD_FAPPR_ALT>) _param_pld_fappr_alt,
