@@ -124,10 +124,11 @@ private:
 	matrix::Vector2f get_target_position_setpoint();
 	void slewrate(float &sp_x, float &sp_y);
 	void clear_current_yaw_setpoint();
+	void update_current_vel_setpoint();
 
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	void update_current_yaw_setpoint();
-	void update_current_vel_setpoint();
+
 	void reset_target_yaw_state();
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 

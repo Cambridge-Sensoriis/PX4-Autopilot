@@ -64,6 +64,7 @@
  */
 enum class WaypointType : int {
 	position = position_setpoint_s::SETPOINT_TYPE_POSITION,
+	position_vel_ff = position_setpoint_s::SETPOINT_TYPE_POSITON_VEL_FF,
 	velocity = position_setpoint_s::SETPOINT_TYPE_VELOCITY,
 	loiter = position_setpoint_s::SETPOINT_TYPE_LOITER,
 	takeoff = position_setpoint_s::SETPOINT_TYPE_TAKEOFF,

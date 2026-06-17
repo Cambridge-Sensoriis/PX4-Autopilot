@@ -596,6 +596,10 @@
                             "name": "auto_course",
                             "description": "Course"
                         },
+                        "26": {
+                            "name": "auto_prectether",
+                            "description": "Precision Tether"
+                        },
                         "255": {
                             "name": "unknown",
                             "description": "[Unknown]"

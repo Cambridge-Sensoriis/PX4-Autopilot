@@ -301,7 +301,8 @@ PrecLand::run_state_horizontal_approach()
 		return;
 	}
 
-	if (check_state_conditions(PrecLandState::DescendAboveTarget)) {
+	if (check_state_conditions(PrecLandState::DescendAboveTarget)
+		&& (_navigator->get_vstatus()->nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND)) {
 		if (!_point_reached_time) {
 			_point_reached_time = hrt_absolute_time();
 		}
@@ -326,13 +327,19 @@ PrecLand::run_state_horizontal_approach()
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.alt = _approach_alt;
-	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	if (!_target_pose.is_static) {
+		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITON_VEL_FF;
+	}
+	else {
+		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	}
+
 
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
-	update_current_vel_setpoint();
-#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+	update_current_vel_setpoint();
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
@@ -372,9 +379,9 @@ PrecLand::run_state_descend_above_target()
 	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_LAND;
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
-	update_current_vel_setpoint();
-#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+	update_current_vel_setpoint();
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
@@ -691,7 +698,7 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 			      sp_y))).length());
 	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
-	if ((sp_vel.length() > max_spd) && (!_param_pld_mov_en.get() || _target_pose.is_static)) {
+	if ((sp_vel.length() > max_spd) && (_target_pose.is_static)) {
 		sp_vel = sp_vel.normalized() * max_spd;
 		sp_curr = _sp_pev + sp_vel * dt;
 	}
@@ -709,6 +716,24 @@ void PrecLand::clear_current_yaw_setpoint()
 	pos_sp_triplet->current.yaw = NAN;
 }
 
+void PrecLand::update_current_vel_setpoint()
+{
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+	vehicle_local_position_s *vehicle_local_position = _navigator->get_local_position();
+
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid && vehicle_local_position->v_xy_valid
+	    && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+	    && PX4_ISFINITE(vehicle_local_position->vx) && PX4_ISFINITE(vehicle_local_position->vy)) {
+
+		pos_sp_triplet->current.vx = vehicle_local_position->vx + _target_pose.vx_rel;
+		pos_sp_triplet->current.vy = vehicle_local_position->vy + _target_pose.vy_rel;
+
+	} else {
+		pos_sp_triplet->current.vx = NAN;
+		pos_sp_triplet->current.vy = NAN;
+	}
+}
+
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 void PrecLand::update_current_yaw_setpoint()
 {
@@ -723,18 +748,7 @@ void PrecLand::reset_target_yaw_state()
 	_last_target_yaw_update = 0;
 }
 
-void PrecLand::update_current_vel_setpoint()
-{
-	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
-	if (_param_pld_mov_en.get() && _target_pose.rel_vel_valid) {
-		pos_sp_triplet->current.vx = _target_pose.vx_rel;
-		pos_sp_triplet->current.vy = _target_pose.vy_rel;
-	} else {
-		pos_sp_triplet->current.vx = NAN;
-		pos_sp_triplet->current.vy = NAN;
-	}
-}
 
 uint8_t PrecLand::map_prec_land_state(PrecLandState state)
 {

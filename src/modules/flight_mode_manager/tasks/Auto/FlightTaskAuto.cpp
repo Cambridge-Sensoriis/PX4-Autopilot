@@ -136,6 +136,20 @@ bool FlightTaskAuto::update()
 		_prepareLandSetpoints();
 		break;
 
+	case WaypointType::position_vel_ff: {
+		_position_setpoint = _triplet_current;
+		const auto &current_sp = _position_setpoint_triplet_sub.get().current;
+
+		if (PX4_ISFINITE(current_sp.vx) && PX4_ISFINITE(current_sp.vy)) {
+			_velocity_setpoint.xy() = Vector2f(current_sp.vx, current_sp.vy);
+		} else {
+			_velocity_setpoint.xy() = Vector2f(NAN, NAN);
+		}
+
+		_velocity_setpoint(2) = NAN;
+		break;
+	}
+
 	case WaypointType::velocity:
 		// XY Velocity waypoint
 		// TODO : Rewiew that. What is the expected behavior?
