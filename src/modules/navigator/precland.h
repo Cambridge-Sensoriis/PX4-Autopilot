@@ -122,7 +122,7 @@ private:
 	 * touchdown rather than where it was last seen.
 	 */
 	matrix::Vector2f get_target_position_setpoint();
-	void slewrate(float &sp_x, float &sp_y);
+	void slewrate(float &sp_x, float &sp_y, float v_terminal = 0.f);
 	void clear_current_yaw_setpoint();
 	void update_current_vel_setpoint();
 

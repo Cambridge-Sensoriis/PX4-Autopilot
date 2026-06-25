@@ -168,7 +168,10 @@ private:
 	bool _estimator_initialized{false};
 	// keep track of whether last measurement was rejected
 	bool _faulty{false};
-	// ArduPilot-style forced fusion: count consecutive rejections
+	// True when the pending measurement came from an absolute NED position report (GPS beacon)
+	// rather than an angle-based sensor; used to skip the NIS gate for these trusted sources.
+	bool _position_measurement_valid{false};
+	// count consecutive rejections for angle-based measurements before forced fusion
 	uint32_t _consecutive_rejections{0};
 
 	matrix::Dcmf _R_att; //Orientation of the body frame

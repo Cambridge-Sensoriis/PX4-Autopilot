@@ -124,31 +124,52 @@ void LandingTargetEstimator::update()
 	} else {
 		// update
 		const float measurement_uncertainty = _params.meas_unc * _dist_z * _dist_z;
-		bool update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
-		bool update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
 
+		bool update_x, update_y;
 
+		if (_position_measurement_valid) {
+			// On gate rejection re-seed to GPS position with vx_rel=0; bad velocity causes unbounded feedforward drift.
+			update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
+			update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
 
-		if (!update_x || !update_y) {
-			_consecutive_rejections++;
-
-			// ArduPilot-style forced fusion: force accept after 3 rejections
-			if (_consecutive_rejections >= 3) {
-				PX4_INFO("Landing target: forced fusion after %d rejections", _consecutive_rejections);
-				update_x = true;
-				update_y = true;
-				_consecutive_rejections = 0;
-				_faulty = false;
-			} else {
-				if (!_faulty) {
-					_faulty = true;
-					PX4_INFO("Landing target measurement rejected:%s%s (rejection %d/3 before forced fusion)", update_x ? "" : " x", update_y ? "" : " y", _consecutive_rejections);
-				}
+			if (!update_x || !update_y) {
+				_kalman_filter_x.init(_target_position_report.rel_pos_x, 0.f,
+						      _params.pos_unc_init, _params.vel_unc_init);
+				_kalman_filter_y.init(_target_position_report.rel_pos_y, 0.f,
+						      _params.pos_unc_init, _params.vel_unc_init);
 			}
 
-		} else {
+			update_x = true;
+			update_y = true;
 			_faulty = false;
 			_consecutive_rejections = 0;
+
+		} else {
+			// Angle-based sensor (IRLock etc.): keep NIS gate to reject gross outliers.
+			update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
+			update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
+
+			if (!update_x || !update_y) {
+				_consecutive_rejections++;
+
+				if (_consecutive_rejections >= 3) {
+					_kalman_filter_x.init(_target_position_report.rel_pos_x, 0.f,
+							      _params.pos_unc_init, _params.vel_unc_init);
+					_kalman_filter_y.init(_target_position_report.rel_pos_y, 0.f,
+							      _params.pos_unc_init, _params.vel_unc_init);
+					update_x = true;
+					update_y = true;
+					_consecutive_rejections = 0;
+					_faulty = false;
+
+				} else {
+					_faulty = true;
+				}
+
+			} else {
+				_faulty = false;
+				_consecutive_rejections = 0;
+			}
 		}
 
 		if (!_faulty) {
@@ -254,9 +275,9 @@ bool LandingTargetEstimator::_process_angle_measurement(float angle_x, float ang
 	_target_position_report.rel_pos_y = sensor_ray(1) / sensor_ray(2) * _dist_z;
 	_target_position_report.rel_pos_z = _dist_z;
 
-	// Adjust relative position according to sensor offset
-	_target_position_report.rel_pos_x += _params.offset_x;
-	_target_position_report.rel_pos_y += _params.offset_y;
+	// // Adjust relative position according to sensor offset
+	// _target_position_report.rel_pos_x += _params.offset_x;
+	// _target_position_report.rel_pos_y += _params.offset_y;
 
 	_target_position_report.timestamp = timestamp;
 
@@ -270,8 +291,9 @@ void LandingTargetEstimator::_update_topics()
 	_vehicleAttitude_valid = _attitudeSub.update(&_vehicleAttitude);
 	_vehicle_acceleration_valid = _vehicle_acceleration_sub.update(&_vehicle_acceleration);
 
-	// Reset flag - only set to true if we successfully process a measurement
+	// Reset per-cycle flags
 	_new_target_measurement = false;
+	_position_measurement_valid = false;
 
 	// Handle irlock_report (hardware IRLock driver)
 	if (_irlockReportSub.update(&_irlockReport)) {
@@ -281,6 +303,7 @@ void LandingTargetEstimator::_update_topics()
 
 		if (_process_angle_measurement(_irlockReport.pos_x, _irlockReport.pos_y, _irlockReport.timestamp)) {
 			_new_target_measurement = true;
+
 		} else {
 			PX4_INFO("[LTEST] irlock_report: angle measurement rejected");
 		}
@@ -289,7 +312,7 @@ void LandingTargetEstimator::_update_topics()
 	// Handle landing_target_report (MAVLink and angle-based measurements)
 	if (_landingTargetReportSub.update(&_landingTargetReport)) {
 
-		if (!_vehicleAttitude_valid || !_vehicleLocalPosition_valid /* || !_vehicleLocalPosition.dist_bottom_valid*/ ) {
+		if (!_vehicleAttitude_valid || !_vehicleLocalPosition_valid /* || !_vehicleLocalPosition.dist_bottom_valid*/) {
 			return;
 		}
 
@@ -306,18 +329,22 @@ void LandingTargetEstimator::_update_topics()
 			}
 
 			// Convert absolute position to relative
-			_target_position_report.rel_pos_x = _landingTargetReport.pos_x - _vehicleLocalPosition.x;
-			_target_position_report.rel_pos_y = _landingTargetReport.pos_y - _vehicleLocalPosition.y;
+			_target_position_report.rel_pos_x = _landingTargetReport.pos_x - _vehicleLocalPosition.x - _params.offset_x;
+			_target_position_report.rel_pos_y = _landingTargetReport.pos_y - _vehicleLocalPosition.y - _params.offset_y;
 			_target_position_report.rel_pos_z = _landingTargetReport.pos_z - _vehicleLocalPosition.z - _params.offset_z;
 
 			_target_position_report.timestamp = _landingTargetReport.timestamp;
 
 			_new_target_measurement = true;
+			_position_measurement_valid = true;
 
 		} else {
+			_position_measurement_valid = false;
+
 			// Angle-based measurement
 			if (_process_angle_measurement(_landingTargetReport.angle_x, _landingTargetReport.angle_y, _landingTargetReport.timestamp)) {
 				_new_target_measurement = true;
+
 			} else {
 				PX4_INFO("[LTEST] landing_target_report: angle measurement rejected");
 			}

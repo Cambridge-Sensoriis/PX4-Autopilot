@@ -2727,7 +2727,7 @@ MavlinkReceiver::handle_message_landing_target(mavlink_message_t *msg)
 			landing_target_report.pos_x = landing_target.x;
 			landing_target_report.pos_y = landing_target.y;
 			landing_target_report.pos_z = landing_target.z;
-			
+
 		} else {
 			landing_target_report.position_valid = false;
 			landing_target_report.angle_x = landing_target.angle_x;
@@ -2746,6 +2746,7 @@ MavlinkReceiver::handle_message_landing_target(mavlink_message_t *msg)
 				      "Landing target: unsupported coordinate frame {1}", landing_target.frame);
 
 	}
+
 	// HHTODO consider what to do with irlock_report??
 // 	} else {
 // 		irlock_report_s irlock_report{};
