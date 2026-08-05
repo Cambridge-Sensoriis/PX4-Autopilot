@@ -55,6 +55,7 @@ LandingTargetEstimator::LandingTargetEstimator()
 {
 	_paramHandle.acc_unc = param_find("LTEST_ACC_UNC");
 	_paramHandle.meas_unc = param_find("LTEST_MEAS_UNC");
+	_paramHandle.min_pos_unc = param_find("LTEST_MEAS_BASE");
 	_paramHandle.pos_unc_init = param_find("LTEST_POS_UNC_IN");
 	_paramHandle.vel_unc_init = param_find("LTEST_VEL_UNC_IN");
 	_paramHandle.mode = param_find("LTEST_MODE");
@@ -123,53 +124,36 @@ void LandingTargetEstimator::update()
 
 	} else {
 		// update
-		const float measurement_uncertainty = _params.meas_unc * _dist_z * _dist_z;
+		// Position noise model (mirrors ArduPilot):
+		//   pos_unc = dist * (LTEST_MEAS_UNC + 0.01 * gyro_rate) + LTEST_MEAS_BASE + eph
+		// The gradient term scales angular sensor noise with altitude; 0.01 s models ~10 ms
+		// measurement latency during rotation. The base terms add a flat floor: LTEST_MEAS_BASE
+		// is a tunable minimum and eph accounts for vehicle GPS position uncertainty.
+		const float gyro_rate = matrix::Vector3f{_vehicle_angular_velocity.xyz}.norm();
+		const float pos_unc = _dist_z * (_params.meas_unc + 0.01f * gyro_rate) + _params.min_pos_unc + _vehicleLocalPosition.eph;
+		const float measurement_uncertainty = pos_unc * pos_unc;
 
-		bool update_x, update_y;
+		bool gated_ok = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty)
+				&& _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
 
-		if (_position_measurement_valid) {
-			// On gate rejection re-seed to GPS position with vx_rel=0; bad velocity causes unbounded feedforward drift.
-			update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
-			update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
+		if (!gated_ok) {
+			_consecutive_rejections++;
 
-			if (!update_x || !update_y) {
-				_kalman_filter_x.init(_target_position_report.rel_pos_x, 0.f,
-						      _params.pos_unc_init, _params.vel_unc_init);
-				_kalman_filter_y.init(_target_position_report.rel_pos_y, 0.f,
-						      _params.pos_unc_init, _params.vel_unc_init);
-			}
-
-			update_x = true;
-			update_y = true;
-			_faulty = false;
-			_consecutive_rejections = 0;
-
-		} else {
-			// Angle-based sensor (IRLock etc.): keep NIS gate to reject gross outliers.
-			update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
-			update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
-
-			if (!update_x || !update_y) {
-				_consecutive_rejections++;
-
-				if (_consecutive_rejections >= 3) {
-					_kalman_filter_x.init(_target_position_report.rel_pos_x, 0.f,
-							      _params.pos_unc_init, _params.vel_unc_init);
-					_kalman_filter_y.init(_target_position_report.rel_pos_y, 0.f,
-							      _params.pos_unc_init, _params.vel_unc_init);
-					update_x = true;
-					update_y = true;
-					_consecutive_rejections = 0;
-					_faulty = false;
-
-				} else {
-					_faulty = true;
-				}
+			if (_consecutive_rejections > 2) {
+				// Sustained rejection: force-fuse without the gate to prevent divergence.
+				// Does not reset velocity — preserves the current estimate.
+				_kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty, true);
+				_kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty, true);
+				_consecutive_rejections = 0;
+				_faulty = false;
 
 			} else {
-				_faulty = false;
-				_consecutive_rejections = 0;
+				_faulty = true;
 			}
+
+		} else {
+			_consecutive_rejections = 0;
+			_faulty = false;
 		}
 
 		if (!_faulty) {
@@ -290,6 +274,7 @@ void LandingTargetEstimator::_update_topics()
 	_vehicleLocalPosition_valid = _vehicleLocalPositionSub.update(&_vehicleLocalPosition);
 	_vehicleAttitude_valid = _attitudeSub.update(&_vehicleAttitude);
 	_vehicle_acceleration_valid = _vehicle_acceleration_sub.update(&_vehicle_acceleration);
+	_vehicle_angular_velocity_sub.update(&_vehicle_angular_velocity);
 
 	// Reset per-cycle flags
 	_new_target_measurement = false;
@@ -332,6 +317,7 @@ void LandingTargetEstimator::_update_topics()
 			_target_position_report.rel_pos_x = _landingTargetReport.pos_x - _vehicleLocalPosition.x - _params.offset_x;
 			_target_position_report.rel_pos_y = _landingTargetReport.pos_y - _vehicleLocalPosition.y - _params.offset_y;
 			_target_position_report.rel_pos_z = _landingTargetReport.pos_z - _vehicleLocalPosition.z - _params.offset_z;
+			_dist_z = _target_position_report.rel_pos_z;
 
 			_target_position_report.timestamp = _landingTargetReport.timestamp;
 
@@ -356,6 +342,7 @@ void LandingTargetEstimator::_update_params()
 {
 	param_get(_paramHandle.acc_unc, &_params.acc_unc);
 	param_get(_paramHandle.meas_unc, &_params.meas_unc);
+	param_get(_paramHandle.min_pos_unc, &_params.min_pos_unc);
 	param_get(_paramHandle.pos_unc_init, &_params.pos_unc_init);
 	param_get(_paramHandle.vel_unc_init, &_params.vel_unc_init);
 

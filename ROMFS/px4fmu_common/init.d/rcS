@@ -609,6 +609,8 @@ else
 	#
 	navigator start
 
+	landing_target_estimator start
+
 	#
 	# Start a thermal calibration if required.
 	#

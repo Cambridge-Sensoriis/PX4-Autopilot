@@ -287,6 +287,8 @@ fi
 
 navigator start
 
+landing_target_estimator start
+
 # Try to start the UXRCE-DDS Client with UDP transport if module exists
 uxrce_dds_ns=""
 if [ "$px4_instance" -ne "0" ]

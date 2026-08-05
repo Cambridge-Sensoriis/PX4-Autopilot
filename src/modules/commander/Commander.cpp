@@ -983,13 +983,12 @@ Commander::handle_command(const vehicle_command_s &cmd)
 							desired_nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND;
 							break;
 
-<<<<<<< HEAD
 						case PX4_CUSTOM_SUB_MODE_GUIDED_COURSE:
 							desired_nav_state = vehicle_status_s::NAVIGATION_STATE_GUIDED_COURSE;
-=======
+							break;
+
 						case PX4_CUSTOM_SUB_MODE_AUTO_PRECTETHER:
 							desired_nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER;
->>>>>>> f7457753b3 (Added Tethering functionality, tested in SITL)
 							break;
 
 						case PX4_CUSTOM_SUB_MODE_EXTERNAL1...PX4_CUSTOM_SUB_MODE_EXTERNAL8:

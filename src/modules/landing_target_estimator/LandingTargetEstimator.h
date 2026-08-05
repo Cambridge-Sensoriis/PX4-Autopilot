@@ -49,6 +49,7 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionInterval.hpp>
 #include <uORB/topics/vehicle_acceleration.h>
+#include <uORB/topics/vehicle_angular_velocity.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/landing_target_report.h>
@@ -115,6 +116,7 @@ private:
 	struct {
 		param_t acc_unc;
 		param_t meas_unc;
+		param_t min_pos_unc;
 		param_t pos_unc_init;
 		param_t vel_unc_init;
 		param_t mode;
@@ -129,6 +131,7 @@ private:
 	struct {
 		float acc_unc;
 		float meas_unc;
+		float min_pos_unc;
 		float pos_unc_init;
 		float vel_unc_init;
 		TargetMode mode;
@@ -150,12 +153,14 @@ private:
 	uORB::Subscription _vehicleLocalPositionSub{ORB_ID(vehicle_local_position)};
 	uORB::Subscription _attitudeSub{ORB_ID(vehicle_attitude)};
 	uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
+	uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
 	uORB::Subscription _landingTargetReportSub{ORB_ID(landing_target_report)};
 	uORB::Subscription _irlockReportSub{ORB_ID(irlock_report)};
 
 	vehicle_local_position_s	_vehicleLocalPosition{};
 	vehicle_attitude_s		_vehicleAttitude{};
 	vehicle_acceleration_s		_vehicle_acceleration{};
+	vehicle_angular_velocity_s	_vehicle_angular_velocity{};
 	landing_target_report_s		_landingTargetReport{};
 	irlock_report_s			_irlockReport{};
 

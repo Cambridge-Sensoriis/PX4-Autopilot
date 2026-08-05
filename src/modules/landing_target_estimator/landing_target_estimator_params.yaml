@@ -30,14 +30,27 @@ parameters:
       decimal: 2
     LTEST_MEAS_UNC:
       description:
-        short: Landing target measurement uncertainty
+        short: Landing target position noise gradient
         long: |-
-          Variance of the landing target measurement from the driver.
-          Higher values result in less aggressive following of the measurement and a smoother output as well as fewer rejected measurements.
+          Angular uncertainty of the landing target sensor (rad). Scales position noise
+          with altitude: noise = sq(dist*(LTEST_MEAS_UNC + 0.01*gyro_rate) + LTEST_MEAS_BASE).
+          Higher values result in less aggressive following of the measurement and more lenient outlier rejection.
       type: float
-      default: 0.005
-      unit: tan(rad)^2
+      default: 0.01
+      unit: rad
+      min: 0.0
       decimal: 4
+    LTEST_MEAS_BASE:
+      description:
+        short: Minimum position uncertainty floor
+        long: |-
+          Minimum position measurement uncertainty regardless of altitude.
+          Prevents the filter from becoming overconfident at very low altitude.
+      type: float
+      default: 0.02
+      unit: m
+      min: 0.0
+      decimal: 3
     LTEST_POS_UNC_IN:
       description:
         short: Initial landing target position uncertainty
