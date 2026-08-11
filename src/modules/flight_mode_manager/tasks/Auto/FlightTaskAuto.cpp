@@ -136,6 +136,20 @@ bool FlightTaskAuto::update()
 		_prepareLandSetpoints();
 		break;
 
+	case WaypointType::position_vel_ff: {
+		_position_setpoint = _triplet_current;
+		const auto &current_sp = _position_setpoint_triplet_sub.get().current;
+
+		if (PX4_ISFINITE(current_sp.vx) && PX4_ISFINITE(current_sp.vy)) {
+			_velocity_setpoint.xy() = Vector2f(current_sp.vx, current_sp.vy);
+		} else {
+			_velocity_setpoint.xy() = Vector2f(NAN, NAN);
+		}
+
+		_velocity_setpoint(2) = NAN;
+		break;
+	}
+
 	case WaypointType::velocity:
 		// XY Velocity waypoint
 		// TODO : Rewiew that. What is the expected behavior?
@@ -269,8 +283,12 @@ void FlightTaskAuto::_prepareLandSetpoints()
 
 #endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
-	// User input assisted landing
-	if (_param_mpc_land_rc_help.get() && _sticks.checkAndUpdateStickInputs()) {
+	// Check if moving target velocity feedforward is active
+	const auto &current_sp = _position_setpoint_triplet_sub.get().current;
+	bool feedforward_active = PX4_ISFINITE(current_sp.vx) && PX4_ISFINITE(current_sp.vy);
+
+	// User input assisted landing - disabled when moving target feedforward is active
+	if (!feedforward_active && _param_mpc_land_rc_help.get() && _sticks.checkAndUpdateStickInputs()) {
 		// Stick full up -1 -> stop, stick full down 1 -> double the speed
 		vertical_speed *= (1 - _sticks.getThrottleZeroCenteredExpo());
 
@@ -325,6 +343,13 @@ void FlightTaskAuto::_prepareLandSetpoints()
 	_position_setpoint = _land_position; // The last element of the land position has to stay NAN
 	_yaw_setpoint = _land_heading;
 	_velocity_setpoint(2) = vertical_speed;
+
+	// Add XY feedforward velocity from moving target
+	if (feedforward_active) {
+		_velocity_setpoint(0) = current_sp.vx;
+		_velocity_setpoint(1) = current_sp.vy;
+	}
+
 	_gear.landing_gear = landing_gear_s::GEAR_DOWN;
 }
 

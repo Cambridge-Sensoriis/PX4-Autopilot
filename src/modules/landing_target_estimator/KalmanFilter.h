@@ -98,12 +98,13 @@ public:
 	void predict(float dt, float acc, float acc_unc);
 
 	/**
-	 * Update the state estimate with a measurement
-	 * @param meas    state measeasurement
+	 * Update the state estimate with a measurement.
+	 * @param meas    state measurement
 	 * @param measUnc measurement uncertainty
-	 * @return update success (measurement not rejected)
+	 * @param force   if true, bypass the NIS outlier gate
+	 * @return true if measurement was fused (always true when force=true)
 	 */
-	bool update(float meas, float measUnc);
+	bool update(float meas, float measUnc, bool force = false);
 
 	/**
 	 * Get the current filter state

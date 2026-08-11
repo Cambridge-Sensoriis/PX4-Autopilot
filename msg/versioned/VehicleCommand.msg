@@ -1,7 +1,7 @@
 # Vehicle Command uORB message. Used for commanding a mission / action / etc.
 # Follows the MAVLink COMMAND_INT / COMMAND_LONG definition
 
-uint32 MESSAGE_VERSION = 0
+uint32 MESSAGE_VERSION = 1
 
 uint64 timestamp # [us] Time since system start.
 
@@ -16,6 +16,7 @@ uint16 VEHICLE_CMD_NAV_RETURN_TO_LAUNCH = 20 # Return to launch location. |Unuse
 uint16 VEHICLE_CMD_NAV_LAND = 21 # Land at location. |Unused|Unused|Unused|Desired yaw angle.|Latitude|Longitude|Altitude|
 uint16 VEHICLE_CMD_NAV_TAKEOFF = 22 # Takeoff from ground / hand. |Unused (FW pitch from FW_TKO_PITCH_MIN)|Unused|Unused|[deg] [@range 0,360] Yaw angle in NED if yaw source available, ignored otherwise|Latitude (WGS-84)|Longitude (WGS-84)|[m] Altitude AMSL|
 uint16 VEHICLE_CMD_NAV_PRECLAND = 23 # Attempt a precision landing.
+uint16 VEHICLE_CMD_NAV_PRECTETHER = 24 # Attempt to precision tether.
 uint16 VEHICLE_CMD_DO_ORBIT = 34 # Start orbiting on the circumference of a circle defined by the parameters. |[m] Radius|[m/s] Velocity|[@enum ORBIT_YAW_BEHAVIOUR] Yaw behaviour|Unused|Latitude/X|Longitude/Y|Altitude/Z|
 uint16 VEHICLE_CMD_DO_FIGUREEIGHT = 35 # Start flying on the outline of a figure eight defined by the parameters. |[m] Major radius|[m] Minor radius|[m/s] Velocity|Orientation|Latitude/X|Longitude/Y|Altitude/Z|
 uint16 VEHICLE_CMD_NAV_ROI = 80 # Sets the region of interest (ROI) for a sensor set or the vehicle itself. This can then be used by the vehicles control system to control the vehicle attitude and the attitude of various sensors such as cameras. |[@enum VEHICLE_ROI] Region of interest mode.|MISSION index/ target ID.|ROI index (allows a vehicle to manage multiple ROI's)|Unused|x the location of the fixed ROI (see MAV_FRAME)|y|z|

@@ -102,3 +102,11 @@ parameters:
       default: 0
       min: 0
       max: 1
+    PLD_MOV_EN:
+      description:
+        short: Set to true to enable moving target prediction.
+        long: Enable the prediction of the future position of a moving landing target.
+      type: boolean
+      default: 0
+      min: 0
+      max: 1

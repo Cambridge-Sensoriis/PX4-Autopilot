@@ -1,6 +1,6 @@
 # Encodes the system state of the vehicle published by commander
 
-uint32 MESSAGE_VERSION = 4
+uint32 MESSAGE_VERSION = 5
 
 uint64 timestamp # time since system start (microseconds)
 
@@ -45,7 +45,7 @@ uint8 NAVIGATION_STATE_DESCEND = 12             # Descend mode (no position cont
 uint8 NAVIGATION_STATE_TERMINATION = 13         # Termination mode
 uint8 NAVIGATION_STATE_OFFBOARD = 14
 uint8 NAVIGATION_STATE_STAB = 15                # Stabilized mode
-uint8 NAVIGATION_STATE_FREE1 = 16
+uint8 NAVIGATION_STATE_AUTO_PRECTETHER = 16	# Precision tether with landing target
 uint8 NAVIGATION_STATE_AUTO_TAKEOFF = 17        # Takeoff
 uint8 NAVIGATION_STATE_AUTO_LAND = 18           # Land
 uint8 NAVIGATION_STATE_AUTO_FOLLOW_TARGET = 19  # Auto Follow

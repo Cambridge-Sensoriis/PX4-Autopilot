@@ -508,6 +508,7 @@ bool Failsafe::isFailsafeIgnored(uint8_t user_intended_mode, int32_t exception_m
 	case vehicle_status_s::NAVIGATION_STATE_DESCEND:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND:
+	case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER:
 	case vehicle_status_s::NAVIGATION_STATE_ORBIT:
 	case vehicle_status_s::NAVIGATION_STATE_GUIDED_COURSE:
 		return exception_mask_parameter & (int)LinkLossExceptionBits::AutoModes;

@@ -301,7 +301,8 @@ PrecLand::run_state_horizontal_approach()
 		return;
 	}
 
-	if (check_state_conditions(PrecLandState::DescendAboveTarget)) {
+	if (check_state_conditions(PrecLandState::DescendAboveTarget)
+	    && (_navigator->get_vstatus()->nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND)) {
 		if (!_point_reached_time) {
 			_point_reached_time = hrt_absolute_time();
 		}
@@ -320,18 +321,56 @@ PrecLand::run_state_horizontal_approach()
 	float x = target_position_sp(0);
 	float y = target_position_sp(1);
 
-	slewrate(x, y);
+	// Terminal velocity for the approach deceleration ramp: the target's absolute speed.
+	// This ensures the position setpoint arrives at the target moving at target velocity
+	// rather than at zero, matching the velocity feedforward and preventing overshoot.
+	float v_terminal = 0.f;
+
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid) {
+		const vehicle_local_position_s *lpos = _navigator->get_local_position();
+
+		if (lpos->v_xy_valid && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+		    && PX4_ISFINITE(lpos->vx) && PX4_ISFINITE(lpos->vy)) {
+			const float vx_abs = lpos->vx + _target_pose.vx_rel;
+			const float vy_abs = lpos->vy + _target_pose.vy_rel;
+			v_terminal = sqrtf(vx_abs * vx_abs + vy_abs * vy_abs);
+		}
+	}
+
+	slewrate(x, y, v_terminal);
+
+	// Post-slewrate: compensates sensor->precland latency without distorting the decel formula.
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid && _target_pose.timestamp > 0
+	    && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)) {
+		const vehicle_local_position_s *lpos_dc = _navigator->get_local_position();
+
+		if (lpos_dc->v_xy_valid && PX4_ISFINITE(lpos_dc->vx) && PX4_ISFINITE(lpos_dc->vy)
+		    && PX4_ISFINITE(lpos_dc->ax) && PX4_ISFINITE(lpos_dc->ay)) {
+			const float dt = math::constrain(
+						 (hrt_absolute_time() - _target_pose.timestamp) * 1e-6f,
+						 0.f, 0.3f);
+			x += (lpos_dc->vx + _target_pose.vx_rel - lpos_dc->ax * dt) * dt;
+			y += (lpos_dc->vy + _target_pose.vy_rel - lpos_dc->ay * dt) * dt;
+		}
+	}
 
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.alt = _approach_alt;
-	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+
+	if (!_target_pose.is_static) {
+		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITON_VEL_FF;
+
+	} else {
+		pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	}
 
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
-#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+	update_current_vel_setpoint();
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
@@ -360,15 +399,48 @@ PrecLand::run_state_descend_above_target()
 
 	const matrix::Vector2f target_position_sp = get_target_position_setpoint();
 
+	float x = target_position_sp(0);
+	float y = target_position_sp(1);
+
+	float v_terminal = 0.f;
+
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid) {
+		const vehicle_local_position_s *lpos = _navigator->get_local_position();
+
+		if (lpos->v_xy_valid && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+		    && PX4_ISFINITE(lpos->vx) && PX4_ISFINITE(lpos->vy)) {
+			const float vx_abs = lpos->vx + _target_pose.vx_rel;
+			const float vy_abs = lpos->vy + _target_pose.vy_rel;
+			v_terminal = sqrtf(vx_abs * vx_abs + vy_abs * vy_abs);
+		}
+	}
+
+	slewrate(x, y, v_terminal);
+
+	// Post-slewrate: compensates sensor->precland latency without distorting the decel formula.
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid && _target_pose.timestamp > 0
+	    && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)) {
+		const vehicle_local_position_s *lpos_dc = _navigator->get_local_position();
+
+		if (lpos_dc->v_xy_valid && PX4_ISFINITE(lpos_dc->vx) && PX4_ISFINITE(lpos_dc->vy)
+		    && PX4_ISFINITE(lpos_dc->ax) && PX4_ISFINITE(lpos_dc->ay)) {
+			const float dt = math::constrain(
+						 (hrt_absolute_time() - _target_pose.timestamp) * 1e-6f,
+						 0.f, 0.3f);
+			x += (lpos_dc->vx + _target_pose.vx_rel - lpos_dc->ax * dt) * dt;
+			y += (lpos_dc->vy + _target_pose.vy_rel - lpos_dc->ay * dt) * dt;
+		}
+	}
+
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
-	_map_ref.reproject(target_position_sp(0), target_position_sp(1), pos_sp_triplet->current.lat,
-			   pos_sp_triplet->current.lon);
+	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_LAND;
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 	update_current_yaw_setpoint();
-#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 
+#endif // CONFIG_MODULES_VISION_TARGET_ESTIMATOR
+	update_current_vel_setpoint();
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
@@ -635,7 +707,7 @@ bool PrecLand::check_state_conditions(PrecLandState state)
 	}
 }
 
-void PrecLand::slewrate(float &sp_x, float &sp_y)
+void PrecLand::slewrate(float &sp_x, float &sp_y, float v_terminal)
 {
 	matrix::Vector2f sp_curr(sp_x, sp_y);
 	uint64_t now = hrt_absolute_time();
@@ -664,26 +736,31 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 
 	_last_slewrate_time = now;
 
-	// limit the setpoint speed to the maximum cruise speed
-	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
+	// Cruise speed and acceleration limits only apply for static targets;
+	// moving targets use only the deceleration formula below and the MPC's own limits.
+	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt;
 
-	if (sp_vel.length() > _param_xy_vel_cruise) {
-		sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
-		sp_curr = _sp_pev + sp_vel * dt;
+	if (v_terminal < FLT_EPSILON) {
+		if (sp_vel.length() > _param_xy_vel_cruise) {
+			sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
+			sp_curr = _sp_pev + sp_vel * dt;
+		}
+
+		matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt);
+
+		if (sp_acc.length() > _param_acceleration_hor) {
+			sp_acc = sp_acc.normalized() * _param_acceleration_hor;
+			sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
+		}
 	}
 
-	// limit the setpoint acceleration to the maximum acceleration
-	matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
-
-	if (sp_acc.length() > _param_acceleration_hor) {
-		sp_acc = sp_acc.normalized() * _param_acceleration_hor;
-		sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
-	}
-
-	// limit the setpoint speed such that we can stop at the setpoint given the maximum acceleration/deceleration
-	float max_spd = sqrtf(_param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
-			      sp_y))).length());
-	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
+	// Limit approach speed so the setpoint can decelerate to v_terminal by the time it reaches
+	// the target.  For static targets v_terminal = 0 (come to a stop); for moving targets it is
+	// the target's absolute speed so we hand off smoothly to the velocity feedforward.
+	// Formula: max_v² = v_terminal² + a * dist  (consistent with existing sqrt(a*dist) convention).
+	const float dist_to_target = ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x, sp_y))).length();
+	const float max_spd = sqrtf(v_terminal * v_terminal + _param_acceleration_hor * dist_to_target);
+	sp_vel = (sp_curr - _sp_pev) / dt;
 
 	if (sp_vel.length() > max_spd) {
 		sp_vel = sp_vel.normalized() * max_spd;
@@ -703,6 +780,36 @@ void PrecLand::clear_current_yaw_setpoint()
 	pos_sp_triplet->current.yaw = NAN;
 }
 
+void PrecLand::update_current_vel_setpoint()
+{
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+	const vehicle_local_position_s *vehicle_local_position = _navigator->get_local_position();
+
+	if (!_target_pose.is_static && _target_pose.rel_vel_valid && vehicle_local_position->v_xy_valid
+	    && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+	    && PX4_ISFINITE(vehicle_local_position->vx) && PX4_ISFINITE(vehicle_local_position->vy)
+	    && PX4_ISFINITE(vehicle_local_position->ax) && PX4_ISFINITE(vehicle_local_position->ay)) {
+
+		// vx + vx_rel - ax*dt_lag recovers true target velocity regardless of vehicle deceleration.
+		const float dt_lag = math::constrain(
+					     (_target_pose.timestamp > 0)
+					     ? (hrt_absolute_time() - _target_pose.timestamp) * 1e-6f
+					     : 0.f,
+					     0.f, 0.3f);
+		const float vx_abs = vehicle_local_position->vx + _target_pose.vx_rel
+				     - vehicle_local_position->ax * dt_lag;
+		const float vy_abs = vehicle_local_position->vy + _target_pose.vy_rel
+				     - vehicle_local_position->ay * dt_lag;
+
+		pos_sp_triplet->current.vx = vx_abs;
+		pos_sp_triplet->current.vy = vy_abs;
+
+	} else {
+		pos_sp_triplet->current.vx = NAN;
+		pos_sp_triplet->current.vy = NAN;
+	}
+}
+
 #if defined(CONFIG_MODULES_VISION_TARGET_ESTIMATOR) && CONFIG_MODULES_VISION_TARGET_ESTIMATOR
 void PrecLand::update_current_yaw_setpoint()
 {
@@ -716,6 +823,8 @@ void PrecLand::reset_target_yaw_state()
 	_target_yaw_valid = false;
 	_last_target_yaw_update = 0;
 }
+
+
 
 uint8_t PrecLand::map_prec_land_state(PrecLandState state)
 {

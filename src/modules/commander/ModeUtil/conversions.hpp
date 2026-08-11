@@ -78,6 +78,8 @@ static inline navigation_mode_t navigation_mode(uint8_t nav_state)
 
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND: return navigation_mode_t::auto_precland;
 
+	case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER: return navigation_mode_t::auto_prectether;
+
 	case vehicle_status_s::NAVIGATION_STATE_ORBIT: return navigation_mode_t::orbit;
 
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_VTOL_TAKEOFF: return navigation_mode_t::auto_vtol_takeoff;
