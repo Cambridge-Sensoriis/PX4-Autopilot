@@ -78,8 +78,8 @@
 #include <uORB/topics/gps_inject_data.h>
 #include <uORB/topics/home_position.h>
 #include <uORB/topics/input_rc.h>
-#include <uORB/topics/irlock_report.h>
 #include <uORB/topics/landing_target_pose.h>
+#include <uORB/topics/landing_target_report.h>
 #include <uORB/topics/log_message.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/mavlink_tunnel.h>
@@ -303,8 +303,8 @@ private:
 	uORB::Publication<gimbal_manager_set_manual_control_s>	_gimbal_manager_set_manual_control_pub{ORB_ID(gimbal_manager_set_manual_control)};
 	uORB::Publication<gimbal_device_information_s>		_gimbal_device_information_pub{ORB_ID(gimbal_device_information)};
 	uORB::Publication<gimbal_device_attitude_status_s>	_gimbal_device_attitude_status_pub{ORB_ID(gimbal_device_attitude_status)};
-	uORB::Publication<irlock_report_s>			_irlock_report_pub{ORB_ID(irlock_report)};
 	uORB::Publication<landing_target_pose_s>		_landing_target_pose_pub{ORB_ID(landing_target_pose)};
+	uORB::Publication<landing_target_report_s>		_landing_target_report_pub{ORB_ID(landing_target_report)};
 	uORB::Publication<log_message_s>			_log_message_pub{ORB_ID(log_message)};
 	uORB::Publication<mavlink_tunnel_s>			_mavlink_tunnel_pub{ORB_ID(mavlink_tunnel)};
 	uORB::Publication<mavlink_tunnel_s>			_esc_serial_passthru_pub{ORB_ID(esc_serial_passthru)};
@@ -401,6 +401,9 @@ private:
 	hrt_abstime _heartbeat_component_uart_bridge{0};
 
 	DEFINE_PARAMETERS(
+#if defined(CONFIG_MODULES_LANDING_TARGET_ESTIMATOR) && CONFIG_MODULES_LANDING_TARGET_ESTIMATOR
+		(ParamBool<px4::params::LTEST_MAV_KF>)      _param_ltest_mav_kf,
+#endif // CONFIG_MODULES_LANDING_TARGET_ESTIMATOR
 		(ParamFloat<px4::params::BAT_CRIT_THR>)     _param_bat_crit_thr,
 		(ParamFloat<px4::params::BAT_EMERGEN_THR>)  _param_bat_emergen_thr,
 		(ParamFloat<px4::params::BAT_LOW_THR>)      _param_bat_low_thr

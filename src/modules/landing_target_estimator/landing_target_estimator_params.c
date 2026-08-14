@@ -57,6 +57,19 @@
 PARAM_DEFINE_INT32(LTEST_MODE, 0);
 
 /**
+ * Route MAVLink LANDING_TARGET position reports through the LTEST Kalman filter
+ *
+ * If enabled, publishes landing_target_report (consumed by LTEST) instead of
+ * landing_target_pose directly. Required for moving/tethered targets, where
+ * relative velocity for feedforward must come from the KF rather than a raw
+ * position-only report.
+ *
+ * @boolean
+ * @group Landing Target Estimator
+ */
+PARAM_DEFINE_INT32(LTEST_MAV_KF, 0);
+
+/**
  * Acceleration uncertainty
  *
  * Variance of acceleration measurement used for landing target position prediction.
