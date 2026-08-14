@@ -242,7 +242,8 @@ PrecLand::run_state_horizontal_approach()
 		return;
 	}
 
-	if (check_state_conditions(PrecLandState::DescendAboveTarget)) {
+	if (check_state_conditions(PrecLandState::DescendAboveTarget)
+	    && (_navigator->get_vstatus()->nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND)) {
 		if (!_point_reached_time) {
 			_point_reached_time = hrt_absolute_time();
 		}
