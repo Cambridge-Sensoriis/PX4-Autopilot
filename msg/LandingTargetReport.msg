@@ -1,7 +1,10 @@
 # LANDING_TARGET MAVLink message Report
 
 uint64 timestamp	# [us] Time since system start
-uint8 frame          	# MAV_FRAME (MAV_FRAME_BODY_FRD=12 for angles, MAV_FRAME_LOCAL_NED=0 for position)
+
+uint8 MAV_FRAME_LOCAL_NED = 1	# the only frame supported for position measurements
+
+uint8 frame          	# MAV_FRAME (MAV_FRAME_BODY_FRD=12 for angles, MAV_FRAME_LOCAL_NED for position)
 uint8 target_num     	# target ID
 uint8 type           	# LANDING_TARGET_TYPE enum
 
