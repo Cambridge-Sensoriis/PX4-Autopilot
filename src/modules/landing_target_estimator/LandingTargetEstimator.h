@@ -52,6 +52,7 @@
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/irlock_report.h>
+#include <uORB/topics/landing_target_report.h>
 #include <uORB/topics/landing_target_pose.h>
 #include <uORB/topics/landing_target_innovations.h>
 #include <uORB/topics/parameter_update.h>
@@ -113,7 +114,8 @@ private:
 	**/
 	struct {
 		param_t acc_unc;
-		param_t meas_unc;
+		param_t meas_grad;
+		param_t meas_base;
 		param_t pos_unc_init;
 		param_t vel_unc_init;
 		param_t mode;
@@ -127,7 +129,8 @@ private:
 
 	struct {
 		float acc_unc;
-		float meas_unc;
+		float meas_grad;
+		float meas_base;
 		float pos_unc_init;
 		float vel_unc_init;
 		TargetMode mode;
@@ -150,18 +153,20 @@ private:
 	uORB::Subscription _attitudeSub{ORB_ID(vehicle_attitude)};
 	uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
 	uORB::Subscription _irlockReportSub{ORB_ID(irlock_report)};
+	uORB::Subscription _landingTargetReportSub{ORB_ID(landing_target_report)};
 
 	vehicle_local_position_s	_vehicleLocalPosition{};
 	vehicle_attitude_s		_vehicleAttitude{};
 	vehicle_acceleration_s		_vehicle_acceleration{};
 	irlock_report_s			_irlockReport{};
+	landing_target_report_s		_landingTargetReport{};
 
 	// keep track of which topics we have received
 	bool _vehicleLocalPosition_valid{false};
 	bool _vehicleAttitude_valid{false};
 	bool _vehicle_acceleration_valid{false};
-	bool _new_irlockReport{false};
-	bool _new_sensorReport{false};
+	// set when a measurement from any source produced a usable relative position this cycle
+	bool _new_target_measurement{false};
 	bool _estimator_initialized{false};
 	// keep track of whether last measurement was rejected
 	bool _faulty{false};
@@ -176,6 +181,20 @@ private:
 	float _dist_z{1.0f};
 
 	void _check_params(const bool force);
+
+	/*
+	 * Project an angular measurement (tangents of the offsets from the sensor boresight) onto the
+	 * ground plane to get the target position relative to the vehicle.
+	 * Shared by the IRLock driver and MAVLink LANDING_TARGET angle reports.
+	 * @return true if _target_position_report was updated
+	 */
+	bool _process_angle_measurement(float tan_x, float tan_y, hrt_abstime timestamp);
+
+	/*
+	 * Consume a MAVLink LANDING_TARGET report in either angle or local NED position form.
+	 * @return true if _target_position_report was updated
+	 */
+	bool _process_landing_target_report(const landing_target_report_s &report);
 
 	void _update_state();
 };

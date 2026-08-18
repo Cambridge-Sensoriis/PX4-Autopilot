@@ -53,7 +53,8 @@ namespace landing_target_estimator
 LandingTargetEstimator::LandingTargetEstimator()
 {
 	_paramHandle.acc_unc = param_find("LTEST_ACC_UNC");
-	_paramHandle.meas_unc = param_find("LTEST_MEAS_UNC");
+	_paramHandle.meas_grad = param_find("LTEST_MEAS_GRAD");
+	_paramHandle.meas_base = param_find("LTEST_MEAS_BASE");
 	_paramHandle.pos_unc_init = param_find("LTEST_POS_UNC_IN");
 	_paramHandle.vel_unc_init = param_find("LTEST_VEL_UNC_IN");
 	_paramHandle.mode = param_find("LTEST_MODE");
@@ -100,13 +101,13 @@ void LandingTargetEstimator::update()
 		}
 	}
 
-	if (!_new_irlockReport) {
+	if (!_new_target_measurement) {
 		// nothing to do
 		return;
 	}
 
 	// mark this sensor measurement as consumed
-	_new_irlockReport = false;
+	_new_target_measurement = false;
 
 
 	if (!_estimator_initialized) {
@@ -122,7 +123,10 @@ void LandingTargetEstimator::update()
 
 	} else {
 		// update
-		const float measurement_uncertainty = _params.meas_unc * _dist_z * _dist_z;
+		// The lateral error of a bearing measurement grows with the range to the target, the floor
+		// keeps the modelled noise from collapsing to zero as we approach it.
+		const float meas_stddev = _dist_z * _params.meas_grad + _params.meas_base;
+		const float measurement_uncertainty = meas_stddev * meas_stddev;
 		bool update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
 		bool update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
 
@@ -210,58 +214,102 @@ void LandingTargetEstimator::_update_topics()
 	_vehicleAttitude_valid = _attitudeSub.update(&_vehicleAttitude);
 	_vehicle_acceleration_valid = _vehicle_acceleration_sub.update(&_vehicle_acceleration);
 
+	// The two sources are mutually exclusive in practice (serial IRLock driver vs MAVLink
+	// LANDING_TARGET), so consume at most one measurement per cycle: the filter must never be
+	// updated twice with the same prediction step.
+	if (_landingTargetReportSub.update(&_landingTargetReport)) {
+		_new_target_measurement = _process_landing_target_report(_landingTargetReport);
 
-	if (_irlockReportSub.update(&_irlockReport)) { //
-		_new_irlockReport = true;
-
-		if (!_vehicleAttitude_valid || !_vehicleLocalPosition_valid || !_vehicleLocalPosition.dist_bottom_valid) {
-			// don't have the data needed for an update
-			return;
-		}
-
-		if (!PX4_ISFINITE(_irlockReport.pos_y) || !PX4_ISFINITE(_irlockReport.pos_x)) {
-			return;
-		}
-
-		matrix::Vector<float, 3> sensor_ray; // ray pointing towards target in body frame
-		sensor_ray(0) = _irlockReport.pos_x * _params.scale_x; // forward
-		sensor_ray(1) = _irlockReport.pos_y * _params.scale_y; // right
-		sensor_ray(2) = 1.0f;
-
-		// rotate unit ray according to sensor orientation
-		_S_att = get_rot_matrix(_params.sensor_yaw);
-		sensor_ray = _S_att * sensor_ray;
-
-		// rotate the unit ray into the navigation frame
-		matrix::Quaternion<float> q_att(&_vehicleAttitude.q[0]);
-		_R_att = matrix::Dcm<float>(q_att);
-		sensor_ray = _R_att * sensor_ray;
-
-		if (fabsf(sensor_ray(2)) < 1e-6f) {
-			// z component of measurement unsafe, don't use this measurement
-			return;
-		}
-
-		_dist_z = _vehicleLocalPosition.dist_bottom - _params.offset_z;
-
-		// scale the ray s.t. the z component has length of _uncertainty_scale
-		_target_position_report.timestamp = _irlockReport.timestamp;
-		_target_position_report.rel_pos_x = sensor_ray(0) / sensor_ray(2) * _dist_z;
-		_target_position_report.rel_pos_y = sensor_ray(1) / sensor_ray(2) * _dist_z;
-		_target_position_report.rel_pos_z = _dist_z;
-
-		// Adjust relative position according to sensor offset
-		_target_position_report.rel_pos_x += _params.offset_x;
-		_target_position_report.rel_pos_y += _params.offset_y;
-
-		_new_irlockReport = true;
+	} else if (_irlockReportSub.update(&_irlockReport)) {
+		// IRLock reports tangents of the angular offsets
+		_new_target_measurement = _process_angle_measurement(_irlockReport.pos_x, _irlockReport.pos_y,
+					  _irlockReport.timestamp);
 	}
+}
+
+bool LandingTargetEstimator::_process_angle_measurement(float tan_x, float tan_y, hrt_abstime timestamp)
+{
+	if (!_vehicleAttitude_valid || !_vehicleLocalPosition_valid || !_vehicleLocalPosition.dist_bottom_valid) {
+		// don't have the data needed for an update
+		return false;
+	}
+
+	if (!PX4_ISFINITE(tan_x) || !PX4_ISFINITE(tan_y)) {
+		return false;
+	}
+
+	matrix::Vector<float, 3> sensor_ray; // ray pointing towards target in body frame
+	sensor_ray(0) = tan_x * _params.scale_x; // forward
+	sensor_ray(1) = tan_y * _params.scale_y; // right
+	sensor_ray(2) = 1.0f;
+
+	// rotate unit ray according to sensor orientation
+	_S_att = get_rot_matrix(_params.sensor_yaw);
+	sensor_ray = _S_att * sensor_ray;
+
+	// rotate the unit ray into the navigation frame
+	matrix::Quaternion<float> q_att(&_vehicleAttitude.q[0]);
+	_R_att = matrix::Dcm<float>(q_att);
+	sensor_ray = _R_att * sensor_ray;
+
+	if (fabsf(sensor_ray(2)) < 1e-6f) {
+		// z component of measurement unsafe, don't use this measurement
+		return false;
+	}
+
+	_dist_z = _vehicleLocalPosition.dist_bottom - _params.offset_z;
+
+	// scale the ray s.t. the z component has length of _uncertainty_scale
+	_target_position_report.timestamp = timestamp;
+	_target_position_report.rel_pos_x = sensor_ray(0) / sensor_ray(2) * _dist_z;
+	_target_position_report.rel_pos_y = sensor_ray(1) / sensor_ray(2) * _dist_z;
+	_target_position_report.rel_pos_z = _dist_z;
+
+	// Adjust relative position according to sensor offset
+	_target_position_report.rel_pos_x += _params.offset_x;
+	_target_position_report.rel_pos_y += _params.offset_y;
+
+	return true;
+}
+
+bool LandingTargetEstimator::_process_landing_target_report(const landing_target_report_s &report)
+{
+	if (!report.position_valid) {
+		// Angle measurements carry tangents, matching the IRLock convention
+		return _process_angle_measurement(report.angle_x, report.angle_y, report.timestamp);
+	}
+
+	if (report.frame != landing_target_report_s::MAV_FRAME_LOCAL_NED) {
+		// Only local NED is supported for position measurements
+		return false;
+	}
+
+	if (!_vehicleLocalPosition_valid || !_vehicleLocalPosition.xy_valid || !_vehicleLocalPosition.z_valid) {
+		// the measurement is absolute, we need our own position to make it relative
+		return false;
+	}
+
+	if (!PX4_ISFINITE(report.pos_x) || !PX4_ISFINITE(report.pos_y) || !PX4_ISFINITE(report.pos_z)) {
+		return false;
+	}
+
+	_target_position_report.timestamp = report.timestamp;
+	_target_position_report.rel_pos_x = report.pos_x - _vehicleLocalPosition.x + _params.offset_x;
+	_target_position_report.rel_pos_y = report.pos_y - _vehicleLocalPosition.y + _params.offset_y;
+	_target_position_report.rel_pos_z = report.pos_z - _vehicleLocalPosition.z;
+
+	// Vertical separation drives the measurement noise model. Unlike the angle path this does not
+	// need a distance sensor, the report gives us the target altitude directly.
+	_dist_z = fabsf(_target_position_report.rel_pos_z);
+
+	return true;
 }
 
 void LandingTargetEstimator::_update_params()
 {
 	param_get(_paramHandle.acc_unc, &_params.acc_unc);
-	param_get(_paramHandle.meas_unc, &_params.meas_unc);
+	param_get(_paramHandle.meas_grad, &_params.meas_grad);
+	param_get(_paramHandle.meas_base, &_params.meas_base);
 	param_get(_paramHandle.pos_unc_init, &_params.pos_unc_init);
 	param_get(_paramHandle.vel_unc_init, &_params.vel_unc_init);
 
