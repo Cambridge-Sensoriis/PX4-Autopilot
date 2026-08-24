@@ -560,6 +560,15 @@ else
 		px4flow start -X &
 	fi
 
+	#
+	# Start the landing target estimator on any board that has it built in. Its parameters only
+	# exist when the module is part of the build, so this is silently skipped everywhere else.
+	#
+	if param greater -s LTEST_MODE -1
+	then
+		landing_target_estimator start
+	fi
+
 	payload_deliverer start
 
 	if param compare -s ICE_EN 1
