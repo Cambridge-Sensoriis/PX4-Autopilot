@@ -88,6 +88,7 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic("irlock_report", 1000);
 	add_optional_topic("landing_gear", 200);
 	add_optional_topic("landing_gear_wheel", 100);
+	add_topic("landing_target_innovations", 10);
 	add_topic("landing_target_pose", 10);
 	add_topic("landing_target_report", 10);
 	add_optional_topic("launch_detection_status", 200);

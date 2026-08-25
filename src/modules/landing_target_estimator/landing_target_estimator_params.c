@@ -221,3 +221,26 @@ PARAM_DEFINE_FLOAT(LTEST_SENS_POS_Y, 0.0f);
  *
  */
 PARAM_DEFINE_FLOAT(LTEST_SENS_POS_Z, 0.0f);
+
+/**
+ * Landing target measurement lag
+ *
+ * Fixed sensor lag that the measurement timestamp does not already account for, such as the time
+ * between a frame being exposed and the sender timestamping the report it produced.
+ *
+ * The estimator derives the rest of the lag from the measurement timestamp on its own. This
+ * parameter is added on top, and is the only compensation available when the sender does not
+ * timestamp its measurements or MAVLink timesync has not converged.
+ *
+ * Only used for moving targets (LTEST_MODE), a stationary one does not move while the measurement
+ * is in flight.
+ *
+ * @unit s
+ * @min 0.0
+ * @max 0.5
+ * @decimal 3
+ * @increment 0.01
+ * @group Landing Target Estimator
+ *
+ */
+PARAM_DEFINE_FLOAT(LTEST_LAG, 0.0f);

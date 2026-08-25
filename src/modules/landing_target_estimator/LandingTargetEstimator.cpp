@@ -64,6 +64,7 @@ LandingTargetEstimator::LandingTargetEstimator()
 	_paramHandle.offset_x = param_find("LTEST_SENS_POS_X");
 	_paramHandle.offset_y = param_find("LTEST_SENS_POS_Y");
 	_paramHandle.offset_z = param_find("LTEST_SENS_POS_Z");
+	_paramHandle.lag = param_find("LTEST_LAG");
 	_check_params(true);
 }
 
@@ -189,6 +190,7 @@ void LandingTargetEstimator::update()
 		_kalman_filter_y.getInnovations(innov_y, innov_cov_y);
 
 		_target_innovations.timestamp = _target_position_report.timestamp;
+		_target_innovations.meas_lag = _meas_lag_us / SEC2USEC;
 		_target_innovations.innov_x = innov_x;
 		_target_innovations.innov_cov_x = innov_cov_x;
 		_target_innovations.innov_y = innov_y;
@@ -272,6 +274,22 @@ bool LandingTargetEstimator::_process_angle_measurement(float tan_x, float tan_y
 	return true;
 }
 
+hrt_abstime LandingTargetEstimator::_measurement_lag(hrt_abstime measurement_timestamp)
+{
+	// A sender that leaves the time empty, or a timesync that has not converged, leaves the
+	// timestamp at the moment of arrival. Then the configured lag is all we know.
+	hrt_abstime lag = (hrt_abstime)(_params.lag * SEC2USEC);
+	const hrt_abstime now = hrt_absolute_time();
+
+	if ((measurement_timestamp > 0) && (measurement_timestamp < now)) {
+		lag += now - measurement_timestamp;
+	}
+
+	_meas_lag_us = math::min(lag, MAX_MEASUREMENT_LAG_US);
+
+	return _meas_lag_us;
+}
+
 bool LandingTargetEstimator::_process_landing_target_report(const landing_target_report_s &report)
 {
 	if (!report.position_valid) {
@@ -297,6 +315,22 @@ bool LandingTargetEstimator::_process_landing_target_report(const landing_target
 	_target_position_report.rel_pos_x = report.pos_x - _vehicleLocalPosition.x + _params.offset_x;
 	_target_position_report.rel_pos_y = report.pos_y - _vehicleLocalPosition.y + _params.offset_y;
 	_target_position_report.rel_pos_z = report.pos_z - _vehicleLocalPosition.z;
+
+	// The report says where the target was when the sensor saw it, not where it is now. Our own
+	// position is measured in the same inertial frame at both instants, so the vehicle's motion in
+	// between needs no correction: what is missing is the distance the target itself covered while
+	// the measurement was in flight.
+	if ((_params.mode == TargetMode::Moving) && _estimator_initialized && _vehicleLocalPosition.v_xy_valid) {
+		float rel_pos_x, rel_vel_x, rel_pos_y, rel_vel_y;
+		_kalman_filter_x.getState(rel_pos_x, rel_vel_x);
+		_kalman_filter_y.getState(rel_pos_y, rel_vel_y);
+
+		// the filter tracks the target relative to the vehicle, so the target's own velocity is
+		// that relative velocity plus the vehicle's
+		const float lag_s = _measurement_lag(report.timestamp) / SEC2USEC;
+		_target_position_report.rel_pos_x += (rel_vel_x + _vehicleLocalPosition.vx) * lag_s;
+		_target_position_report.rel_pos_y += (rel_vel_y + _vehicleLocalPosition.vy) * lag_s;
+	}
 
 	// Vertical separation drives the measurement noise model. Unlike the angle path this does not
 	// need a distance sensor, the report gives us the target altitude directly.
@@ -327,6 +361,7 @@ void LandingTargetEstimator::_update_params()
 	param_get(_paramHandle.offset_x, &_params.offset_x);
 	param_get(_paramHandle.offset_y, &_params.offset_y);
 	param_get(_paramHandle.offset_z, &_params.offset_z);
+	param_get(_paramHandle.lag, &_params.lag);
 }
 
 

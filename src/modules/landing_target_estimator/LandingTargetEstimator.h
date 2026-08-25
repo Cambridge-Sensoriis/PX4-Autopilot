@@ -94,6 +94,10 @@ protected:
 	/* timeout after which filter is reset if target not seen */
 	static constexpr uint32_t landing_target_estimator_TIMEOUT_US = 2000000;
 
+	/* a measurement claiming to be older than this means the clocks disagree, not that the sensor
+	 * is slow, so the lag it implies is not acted on */
+	static constexpr hrt_abstime MAX_MEASUREMENT_LAG_US = 500_ms;
+
 	uORB::Publication<landing_target_pose_s> _targetPosePub{ORB_ID(landing_target_pose)};
 	landing_target_pose_s _target_pose{};
 
@@ -125,6 +129,7 @@ private:
 		param_t offset_y;
 		param_t offset_z;
 		param_t sensor_yaw;
+		param_t lag;
 	} _paramHandle;
 
 	struct {
@@ -140,6 +145,7 @@ private:
 		float offset_y;
 		float offset_z;
 		enum Rotation sensor_yaw;
+		float lag;
 	} _params;
 
 	struct {
@@ -179,8 +185,15 @@ private:
 	hrt_abstime _last_predict{0}; // timestamp of last filter prediction
 	hrt_abstime _last_update{0}; // timestamp of last filter update (used to check timeout)
 	float _dist_z{1.0f};
+	hrt_abstime _meas_lag_us{0}; // lag the last measurement was compensated for
 
 	void _check_params(const bool force);
+
+	/*
+	 * Time between a measurement being taken and now: what its timestamp implies, plus the fixed
+	 * sensor lag that the timestamp cannot cover.
+	 */
+	hrt_abstime _measurement_lag(hrt_abstime measurement_timestamp);
 
 	/*
 	 * Project an angular measurement (tangents of the offsets from the sensor boresight) onto the

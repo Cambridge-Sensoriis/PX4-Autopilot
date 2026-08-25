@@ -6,3 +6,5 @@ float32 innov_y
 # Innovation covariance of landing target position estimator
 float32 innov_cov_x
 float32 innov_cov_y
+
+float32 meas_lag		# measurement lag compensated for [s]
