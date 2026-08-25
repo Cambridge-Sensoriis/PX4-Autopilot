@@ -102,6 +102,14 @@ protected:
 	/* timeout after which filter is reset if target not seen */
 	static constexpr uint32_t landing_target_estimator_TIMEOUT_US = 2000000;
 
+	/** Consecutive gate rejections tolerated before fusing anyway. The gate exists to reject
+	 *  outliers, but a filter that has drifted far enough rejects everything, drifts further and
+	 *  times the target out. Breaking that lockout matters most at high target speed, where the
+	 *  residuals are largest. */
+	static constexpr uint8_t MAX_CONSECUTIVE_REJECTIONS = 2;
+
+	uint8_t _consecutive_rejections{0};
+
 	/* a measurement claiming to be older than this means the clocks disagree, not that the sensor
 	 * is slow, so the lag it implies is not acted on */
 	static constexpr hrt_abstime MAX_MEASUREMENT_LAG_US = 500_ms;

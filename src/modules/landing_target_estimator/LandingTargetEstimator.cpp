@@ -128,12 +128,33 @@ void LandingTargetEstimator::update()
 			bool update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
 
 			if (!update_x || !update_y) {
-				if (!_faulty) {
+				_consecutive_rejections++;
+
+				if (_consecutive_rejections > MAX_CONSECUTIVE_REJECTIONS) {
+					// The gate has locked out: the state has drifted far enough from the measurements
+					// that nothing gets back in, and with no update it only drifts further until the
+					// target times out. Fuse past the gate to recover. Deliberately fusing rather than
+					// re-initialising, because init() would zero the velocity state and the moving
+					// target feedforward is built on it. Only the axis that was rejected is forced,
+					// so an axis that already fused is not fused twice.
+					if (!update_x) {
+						_kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty, true);
+					}
+
+					if (!update_y) {
+						_kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty, true);
+					}
+
+					_consecutive_rejections = 0;
+					_faulty = false;
+
+				} else if (!_faulty) {
 					_faulty = true;
 					PX4_INFO("Landing target measurement rejected:%s%s", update_x ? "" : " x", update_y ? "" : " y");
 				}
 
 			} else {
+				_consecutive_rejections = 0;
 				_faulty = false;
 			}
 
