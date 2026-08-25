@@ -138,7 +138,8 @@ private:
 		(ParamFloat<px4::params::PLD_FAPPR_ALT>) _param_pld_fappr_alt,
 		(ParamFloat<px4::params::PLD_SRCH_ALT>) _param_pld_srch_alt,
 		(ParamFloat<px4::params::PLD_SRCH_TOUT>) _param_pld_srch_tout,
-		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch
+		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch,
+		(ParamInt<px4::params::PLD_MOV_TGT_FF>) _param_pld_mov_tgt_ff
 	)
 
 	// non-navigator parameters

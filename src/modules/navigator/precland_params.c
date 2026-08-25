@@ -119,3 +119,13 @@ PARAM_DEFINE_FLOAT(PLD_SRCH_TOUT, 10.0f);
  * @group Precision Land
  */
 PARAM_DEFINE_INT32(PLD_MAX_SRCH, 3);
+
+/**
+ * Moving target feedforward enable
+ *
+ * Enable feedforward of the moving landing target velocity to the vehicle.
+ *
+ * @boolean
+ * @group Precision Land
+ */
+PARAM_DEFINE_INT32(PLD_MOV_TGT_FF, 0);
