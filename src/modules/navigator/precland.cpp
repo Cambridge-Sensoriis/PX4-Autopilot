@@ -116,6 +116,7 @@ PrecLand::on_active()
 
 	if (_target_pose_updated) {
 		_target_pose_valid = true;
+		_last_target_pose_rx = hrt_absolute_time();
 	}
 
 	if ((hrt_elapsed_time(&_target_pose.timestamp) / 1e6f) > _param_pld_btout.get()) {
@@ -267,7 +268,10 @@ PrecLand::run_state_horizontal_approach()
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.alt = _approach_alt;
-	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	pos_sp_triplet->current.type = moving_target_ff_active()
+				       ? position_setpoint_s::SETPOINT_TYPE_POS_VEL_FF
+				       : position_setpoint_s::SETPOINT_TYPE_POSITION;
+	update_current_vel_setpoint();
 
 	_navigator->set_position_setpoint_triplet_updated();
 }
@@ -298,7 +302,10 @@ PrecLand::run_state_descend_above_target()
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(_target_pose.x_abs, _target_pose.y_abs, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
+	// Stays LAND: the type drives the descent profile, land detector and gear, while the
+	// feedforward is carried orthogonally by the velocity fields.
 	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_LAND;
+	update_current_vel_setpoint();
 
 	_navigator->set_position_setpoint_triplet_updated();
 }
@@ -577,4 +584,41 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 
 	sp_x = sp_curr(0);
 	sp_y = sp_curr(1);
+}
+
+bool PrecLand::moving_target_ff_active() const
+{
+	const vehicle_local_position_s *local_pos = _navigator->get_local_position();
+
+	// The estimator publishes rel_vel_valid unconditionally and _target_pose keeps its last
+	// contents after the estimator stops publishing, so neither is evidence the velocity is still
+	// current. Time it from when an estimate last arrived. Deliberately not from
+	// _target_pose.timestamp: that is the measurement time, which the estimator has already
+	// forward-predicted past, and it lags by up to MAX_MEASUREMENT_LAG_US on a real sensor. Gating
+	// on it drops the feedforward on exactly the healthy data it was meant to protect.
+	const bool velocity_is_fresh = _target_pose_valid && (_last_target_pose_rx != 0)
+				       && (hrt_elapsed_time(&_last_target_pose_rx) < MOVING_TARGET_FF_TIMEOUT_US);
+
+	return _param_pld_mov_tgt_ff.get() && !_target_pose.is_static && _target_pose.rel_vel_valid
+	       && velocity_is_fresh
+	       && local_pos->v_xy_valid
+	       && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+	       && PX4_ISFINITE(local_pos->vx) && PX4_ISFINITE(local_pos->vy);
+}
+
+void PrecLand::update_current_vel_setpoint()
+{
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	if (moving_target_ff_active()) {
+		const vehicle_local_position_s *local_pos = _navigator->get_local_position();
+		pos_sp_triplet->current.vx = local_pos->vx + _target_pose.vx_rel;
+		pos_sp_triplet->current.vy = local_pos->vy + _target_pose.vy_rel;
+
+	} else {
+		// Zero rather than NAN: reset_position_setpoint() leaves these at zero, and
+		// MissionBase::position_setpoint_equal compares them without a NAN guard.
+		pos_sp_triplet->current.vx = 0.f;
+		pos_sp_triplet->current.vy = 0.f;
+	}
 }
