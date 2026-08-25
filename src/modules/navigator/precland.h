@@ -106,19 +106,15 @@ private:
 	// check if a given state could be changed into. Return true if possible to transition to state, false otherwise
 	bool check_state_conditions(PrecLandState state);
 
-	void slewrate(float &sp_x, float &sp_y);
+	void slewrate(float &sp_x, float &sp_y, float v_terminal);
 	void update_current_vel_setpoint();
 
 	// True when the target is moving, its velocity is usable, and the operator has enabled
 	// feedforward. Single predicate so the setpoint type and the commanded velocity never disagree.
 	bool moving_target_ff_active() const;
 
-	/** How long we may go without a new estimate before dropping the velocity feedforward. Timed
-	 *  from reception, not from _target_pose.timestamp: that is the measurement time, and the
-	 *  estimator forward-predicts past it, so an old measurement stamp does not mean a stale
-	 *  estimate. The estimator publishes at 50 Hz while it is tracking, so this only trips when it
-	 *  has actually stopped. */
-	static constexpr hrt_abstime MOVING_TARGET_FF_TIMEOUT_US = 500000;
+	// Absolute horizontal speed of the target, 0 when the feedforward is not active.
+	float target_absolute_speed() const;
 
 	landing_target_pose_s _target_pose{}; /**< precision landing target position */
 
@@ -132,6 +128,13 @@ private:
 	uint64_t _last_slewrate_time{0}; /**< time when we last limited setpoint changes */
 
 	uint64_t _last_target_pose_rx{0}; /**< when we last received an estimate, NOT when it was measured */
+
+	/** How long we may go without a new estimate before dropping the velocity feedforward. Timed
+	 *  from reception, not from _target_pose.timestamp: that is the measurement time, and the
+	 *  estimator forward-predicts past it, so an old measurement stamp does not mean a stale
+	 *  estimate. The estimator publishes at 50 Hz while it is tracking, so this only trips when it
+	 *  has actually stopped. */
+	static constexpr hrt_abstime MOVING_TARGET_FF_TIMEOUT_US = 500000;
 	uint64_t _target_acquired_time{0}; /**< time when we first saw the landing target during search */
 	uint64_t _point_reached_time{0}; /**< time when we reached a setpoint */
 

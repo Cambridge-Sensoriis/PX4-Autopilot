@@ -262,7 +262,9 @@ PrecLand::run_state_horizontal_approach()
 	float x = _target_pose.x_abs;
 	float y = _target_pose.y_abs;
 
-	slewrate(x, y);
+	// Decelerate towards the target's own speed rather than to a standstill, so the setpoint
+	// hands over smoothly to the velocity feedforward instead of fighting it.
+	slewrate(x, y, target_absolute_speed());
 
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
@@ -524,7 +526,7 @@ bool PrecLand::check_state_conditions(PrecLandState state)
 	}
 }
 
-void PrecLand::slewrate(float &sp_x, float &sp_y)
+void PrecLand::slewrate(float &sp_x, float &sp_y, float v_terminal)
 {
 	matrix::Vector2f sp_curr(sp_x, sp_y);
 	uint64_t now = hrt_absolute_time();
@@ -553,25 +555,38 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 
 	_last_slewrate_time = now;
 
-	// limit the setpoint speed to the maximum cruise speed
+	// Both limits shape the setpoint towards a stationary point, and both fight a moving one. The
+	// cruise limit caps how fast the setpoint may travel, which caps how fast it can ever catch up.
+	// The acceleration limit starves the catch-up transient: closing on a pad at cruise speed means
+	// first accelerating the setpoint to the pad's speed, falling further behind the whole time,
+	// then exceeding it to claw the gap back, and rate-limiting that can leave it never converging.
+	// So neither applies once we are chasing something that moves; the deceleration limit below,
+	// which is aware of the pad's own speed, is what shapes the moving-target approach.
 	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
-	if (sp_vel.length() > _param_xy_vel_cruise) {
-		sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
-		sp_curr = _sp_pev + sp_vel * dt;
+	if (v_terminal < FLT_EPSILON) {
+		// limit the setpoint speed to the maximum cruise speed
+		if (sp_vel.length() > _param_xy_vel_cruise) {
+			sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
+			sp_curr = _sp_pev + sp_vel * dt;
+		}
+
+		// limit the setpoint acceleration to the maximum acceleration
+		matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
+
+		if (sp_acc.length() > _param_acceleration_hor) {
+			sp_acc = sp_acc.normalized() * _param_acceleration_hor;
+			sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
+		}
 	}
 
-	// limit the setpoint acceleration to the maximum acceleration
-	matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
-
-	if (sp_acc.length() > _param_acceleration_hor) {
-		sp_acc = sp_acc.normalized() * _param_acceleration_hor;
-		sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
-	}
-
-	// limit the setpoint speed such that we can stop at the setpoint given the maximum acceleration/deceleration
-	float max_spd = sqrtf(_param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
-			      sp_y))).length());
+	// Limit the setpoint speed such that it can decelerate to v_terminal by the time it reaches
+	// the target, from v^2 = v_terminal^2 + 2*a*d with the factor of 2 dropped to keep the
+	// existing sqrt(a*d) convention. v_terminal is 0 for a static target, so this reduces to the
+	// original "stop at the setpoint" limit.
+	float max_spd = sqrtf(v_terminal * v_terminal
+			      + _param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
+					      sp_y))).length());
 	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
 	if (sp_vel.length() > max_spd) {
@@ -604,6 +619,18 @@ bool PrecLand::moving_target_ff_active() const
 	       && local_pos->v_xy_valid
 	       && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
 	       && PX4_ISFINITE(local_pos->vx) && PX4_ISFINITE(local_pos->vy);
+}
+
+float PrecLand::target_absolute_speed() const
+{
+	if (!moving_target_ff_active()) {
+		return 0.f;
+	}
+
+	const vehicle_local_position_s *local_pos = _navigator->get_local_position();
+	const matrix::Vector2f v_abs(local_pos->vx + _target_pose.vx_rel, local_pos->vy + _target_pose.vy_rel);
+
+	return v_abs.length();
 }
 
 void PrecLand::update_current_vel_setpoint()
