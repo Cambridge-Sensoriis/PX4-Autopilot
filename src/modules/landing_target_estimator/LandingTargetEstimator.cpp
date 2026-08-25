@@ -102,102 +102,109 @@ void LandingTargetEstimator::update()
 		}
 	}
 
-	if (!_new_target_measurement) {
-		// nothing to do
-		return;
-	}
+	if (_new_target_measurement) {
+		// mark this sensor measurement as consumed
+		_new_target_measurement = false;
 
-	// mark this sensor measurement as consumed
-	_new_target_measurement = false;
+		if (!_estimator_initialized) {
+			float vx_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vx : 0.f;
+			float vy_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vy : 0.f;
+			PX4_INFO("Init %.2f %.2f", (double)vx_init, (double)vy_init);
+			_kalman_filter_x.init(_target_position_report.rel_pos_x, vx_init, _params.pos_unc_init, _params.vel_unc_init);
+			_kalman_filter_y.init(_target_position_report.rel_pos_y, vy_init, _params.pos_unc_init, _params.vel_unc_init);
 
-
-	if (!_estimator_initialized) {
-		float vx_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vx : 0.f;
-		float vy_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vy : 0.f;
-		PX4_INFO("Init %.2f %.2f", (double)vx_init, (double)vy_init);
-		_kalman_filter_x.init(_target_position_report.rel_pos_x, vx_init, _params.pos_unc_init, _params.vel_unc_init);
-		_kalman_filter_y.init(_target_position_report.rel_pos_y, vy_init, _params.pos_unc_init, _params.vel_unc_init);
-
-		_estimator_initialized = true;
-		_last_update = hrt_absolute_time();
-		_last_predict = _last_update;
-
-	} else {
-		// update
-		// The lateral error of a bearing measurement grows with the range to the target, the floor
-		// keeps the modelled noise from collapsing to zero as we approach it.
-		const float meas_stddev = _dist_z * _params.meas_grad + _params.meas_base;
-		const float measurement_uncertainty = meas_stddev * meas_stddev;
-		bool update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
-		bool update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
-
-		if (!update_x || !update_y) {
-			if (!_faulty) {
-				_faulty = true;
-				PX4_INFO("Landing target measurement rejected:%s%s", update_x ? "" : " x", update_y ? "" : " y");
-			}
-
-		} else {
-			_faulty = false;
-		}
-
-		if (!_faulty) {
-			// only publish if both measurements were good
-
+			_estimator_initialized = true;
 			_target_pose.timestamp = _target_position_report.timestamp;
-
-			float x, xvel, y, yvel, covx, covx_v, covy, covy_v;
-			_kalman_filter_x.getState(x, xvel);
-			_kalman_filter_x.getCovariance(covx, covx_v);
-
-			_kalman_filter_y.getState(y, yvel);
-			_kalman_filter_y.getCovariance(covy, covy_v);
-
-			_target_pose.is_static = (_params.mode == TargetMode::Stationary);
-
-			_target_pose.rel_pos_valid = true;
-			_target_pose.rel_vel_valid = true;
-			_target_pose.x_rel = x;
-			_target_pose.y_rel = y;
-			_target_pose.z_rel = _target_position_report.rel_pos_z ;
-			_target_pose.vx_rel = xvel;
-			_target_pose.vy_rel = yvel;
-
-			_target_pose.cov_x_rel = covx;
-			_target_pose.cov_y_rel = covy;
-
-			_target_pose.cov_vx_rel = covx_v;
-			_target_pose.cov_vy_rel = covy_v;
-
-			if (_vehicleLocalPosition_valid && _vehicleLocalPosition.xy_valid) {
-				_target_pose.x_abs = x + _vehicleLocalPosition.x;
-				_target_pose.y_abs = y + _vehicleLocalPosition.y;
-				_target_pose.z_abs = _target_position_report.rel_pos_z  + _vehicleLocalPosition.z;
-				_target_pose.abs_pos_valid = true;
-
-			} else {
-				_target_pose.abs_pos_valid = false;
-			}
-
-			_targetPosePub.publish(_target_pose);
-
 			_last_update = hrt_absolute_time();
 			_last_predict = _last_update;
+
+		} else {
+			// update
+			// The lateral error of a bearing measurement grows with the range to the target, the floor
+			// keeps the modelled noise from collapsing to zero as we approach it.
+			const float meas_stddev = _dist_z * _params.meas_grad + _params.meas_base;
+			const float measurement_uncertainty = meas_stddev * meas_stddev;
+			bool update_x = _kalman_filter_x.update(_target_position_report.rel_pos_x, measurement_uncertainty);
+			bool update_y = _kalman_filter_y.update(_target_position_report.rel_pos_y, measurement_uncertainty);
+
+			if (!update_x || !update_y) {
+				if (!_faulty) {
+					_faulty = true;
+					PX4_INFO("Landing target measurement rejected:%s%s", update_x ? "" : " x", update_y ? "" : " y");
+				}
+
+			} else {
+				_faulty = false;
+			}
+
+			if (!_faulty) {
+				// Only a fused measurement advances the timestamp and the loss watchdog. A rejected
+				// one leaves both where they were, so a run of rejections still times the target out.
+				_target_pose.timestamp = _target_position_report.timestamp;
+				_last_update = hrt_absolute_time();
+				_last_predict = _last_update;
+			}
+
+			float innov_x, innov_cov_x, innov_y, innov_cov_y;
+			_kalman_filter_x.getInnovations(innov_x, innov_cov_x);
+			_kalman_filter_y.getInnovations(innov_y, innov_cov_y);
+
+			_target_innovations.timestamp = _target_position_report.timestamp;
+			_target_innovations.meas_lag = _meas_lag_us / SEC2USEC;
+			_target_innovations.innov_x = innov_x;
+			_target_innovations.innov_cov_x = innov_cov_x;
+			_target_innovations.innov_y = innov_y;
+			_target_innovations.innov_cov_y = innov_cov_y;
+
+			_targetInnovationsPub.publish(_target_innovations);
 		}
-
-		float innov_x, innov_cov_x, innov_y, innov_cov_y;
-		_kalman_filter_x.getInnovations(innov_x, innov_cov_x);
-		_kalman_filter_y.getInnovations(innov_y, innov_cov_y);
-
-		_target_innovations.timestamp = _target_position_report.timestamp;
-		_target_innovations.meas_lag = _meas_lag_us / SEC2USEC;
-		_target_innovations.innov_x = innov_x;
-		_target_innovations.innov_cov_x = innov_cov_x;
-		_target_innovations.innov_y = innov_y;
-		_target_innovations.innov_cov_y = innov_cov_y;
-
-		_targetInnovationsPub.publish(_target_innovations);
 	}
+
+	// Publish every cycle the filter is running, not only when a measurement lands. The predict step
+	// above already advances the state at the module rate, and withholding it until the next
+	// measurement left consumers holding a position up to a full sensor interval stale, which shows
+	// up as the vehicle trailing a moving target.
+	if (_estimator_initialized) {
+		_publish_target_pose();
+	}
+}
+
+void LandingTargetEstimator::_publish_target_pose()
+{
+	float x, xvel, y, yvel, covx, covx_v, covy, covy_v;
+	_kalman_filter_x.getState(x, xvel);
+	_kalman_filter_x.getCovariance(covx, covx_v);
+
+	_kalman_filter_y.getState(y, yvel);
+	_kalman_filter_y.getCovariance(covy, covy_v);
+
+	_target_pose.is_static = (_params.mode == TargetMode::Stationary);
+
+	_target_pose.rel_pos_valid = true;
+	_target_pose.rel_vel_valid = true;
+	_target_pose.x_rel = x;
+	_target_pose.y_rel = y;
+	_target_pose.z_rel = _target_position_report.rel_pos_z;
+	_target_pose.vx_rel = xvel;
+	_target_pose.vy_rel = yvel;
+
+	_target_pose.cov_x_rel = covx;
+	_target_pose.cov_y_rel = covy;
+
+	_target_pose.cov_vx_rel = covx_v;
+	_target_pose.cov_vy_rel = covy_v;
+
+	if (_vehicleLocalPosition_valid && _vehicleLocalPosition.xy_valid) {
+		_target_pose.x_abs = x + _vehicleLocalPosition.x;
+		_target_pose.y_abs = y + _vehicleLocalPosition.y;
+		_target_pose.z_abs = _target_position_report.rel_pos_z + _vehicleLocalPosition.z;
+		_target_pose.abs_pos_valid = true;
+
+	} else {
+		_target_pose.abs_pos_valid = false;
+	}
+
+	_targetPosePub.publish(_target_pose);
 }
 
 void LandingTargetEstimator::_check_params(const bool force)

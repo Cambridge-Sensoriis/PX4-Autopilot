@@ -91,6 +91,14 @@ protected:
 	 */
 	void _update_params();
 
+	/**
+	 * Fill _target_pose from the current filter state and publish it.
+	 * Deliberately does not touch _target_pose.timestamp: that stays at the last successfully
+	 * fused measurement, because consumers time target loss from it and EKF2 uses it as an
+	 * observation time for delayed fusion.
+	 */
+	void _publish_target_pose();
+
 	/* timeout after which filter is reset if target not seen */
 	static constexpr uint32_t landing_target_estimator_TIMEOUT_US = 2000000;
 
