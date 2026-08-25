@@ -60,6 +60,7 @@
  */
 enum class WaypointType : int {
 	position = position_setpoint_s::SETPOINT_TYPE_POSITION,
+	position_vel_ff = position_setpoint_s::SETPOINT_TYPE_POS_VEL_FF,
 	velocity = position_setpoint_s::SETPOINT_TYPE_VELOCITY,
 	loiter = position_setpoint_s::SETPOINT_TYPE_LOITER,
 	takeoff = position_setpoint_s::SETPOINT_TYPE_TAKEOFF,
@@ -125,6 +126,7 @@ protected:
 	matrix::Vector3f _prev_wp{}; /**< Previous waypoint  (local frame). If no previous triplet is available, the prev_wp is set to current position. */
 	bool _prev_was_valid{false};
 	matrix::Vector3f _target{}; /**< Target waypoint  (local frame).*/
+	matrix::Vector3f _target_velocity{}; /**< Velocity of the target waypoint (local frame). NAN per axis if not commanded. */
 	matrix::Vector3f _next_wp{}; /**< The next waypoint after target (local frame). If no next setpoint is available, next is set to target. */
 	bool _next_was_valid{false};
 	float _mc_cruise_speed{NAN}; /**< Requested cruise speed. If not valid, default cruise speed is used. */
