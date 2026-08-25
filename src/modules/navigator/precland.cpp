@@ -301,8 +301,18 @@ PrecLand::run_state_descend_above_target()
 		return;
 	}
 
+	float x = _target_pose.x_abs;
+	float y = _target_pose.y_abs;
+
+	// Descent is the phase where setpoint noise matters most: low, close in, and seconds from
+	// touchdown. Reprojecting the raw estimate here put unfiltered target position straight into
+	// the setpoint, so it gets the same limiting the approach uses. Entry to this state is only
+	// ever from the horizontal approach, which runs the slew limiter every cycle, so the filter
+	// state is already settled on the target and the transition introduces no step.
+	slewrate(x, y, target_absolute_speed());
+
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
-	_map_ref.reproject(_target_pose.x_abs, _target_pose.y_abs, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
+	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	// Stays LAND: the type drives the descent profile, land detector and gear, while the
 	// feedforward is carried orthogonally by the velocity fields.
