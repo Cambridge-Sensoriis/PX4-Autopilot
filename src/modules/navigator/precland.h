@@ -56,6 +56,7 @@ enum class PrecLandState {
 	FinalApproach, // Final landing approach, even without landing target
 	Search, // Search for landing target
 	Fallback, // Fallback landing method
+	Abort, // Climb to the search altitude and hand over to Position mode
 	Done // Done landing
 };
 
@@ -91,6 +92,7 @@ private:
 	void run_state_final_approach();
 	void run_state_search();
 	void run_state_fallback();
+	void run_state_abort();
 
 	// attempt to switch to a different state. Returns true if state change was successful, false otherwise
 	bool switch_to_state_start();
@@ -99,6 +101,7 @@ private:
 	bool switch_to_state_final_approach();
 	bool switch_to_state_search();
 	bool switch_to_state_fallback();
+	bool switch_to_state_abort();
 	bool switch_to_state_done();
 
 	void print_state_switch_message(const char *state_name);
@@ -150,6 +153,9 @@ private:
 
 	bool _is_activated {false}; /**< indicates if precland is activated */
 
+	/**< Position mode handover requested, so it is not published again every cycle */
+	bool _abort_handover_sent{false};
+
 	DEFINE_PARAMETERS(
 		(ParamFloat<px4::params::PLD_BTOUT>) _param_pld_btout,
 		(ParamFloat<px4::params::PLD_HACC_RAD>) _param_pld_hacc_rad,
@@ -157,7 +163,8 @@ private:
 		(ParamFloat<px4::params::PLD_SRCH_ALT>) _param_pld_srch_alt,
 		(ParamFloat<px4::params::PLD_SRCH_TOUT>) _param_pld_srch_tout,
 		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch,
-		(ParamInt<px4::params::PLD_MOV_TGT_FF>) _param_pld_mov_tgt_ff
+		(ParamInt<px4::params::PLD_MOV_TGT_FF>) _param_pld_mov_tgt_ff,
+		(ParamInt<px4::params::PLD_LOST_ACT>) _param_pld_lost_act
 	)
 
 	// non-navigator parameters

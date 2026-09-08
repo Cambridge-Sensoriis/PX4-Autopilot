@@ -49,6 +49,9 @@
 
 #include <systemlib/err.h>
 #include <systemlib/mavlink_log.h>
+#include <px4_platform_common/events.h>
+
+#include <commander/px4_custom_mode.h>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/position_setpoint_triplet.h>
@@ -58,6 +61,10 @@
 #define SEC2USEC 1000000.0f
 
 #define STATE_TIMEOUT 10000000 // [us] Maximum time to spend in any state
+
+// [us] Hand over to Position mode even if the climb to the search altitude has not finished, so a
+// vehicle that cannot reach it does not sit in the abort state indefinitely.
+#define ABORT_CLIMB_TIMEOUT 20000000
 
 static constexpr const char *LOST_TARGET_ERROR_MESSAGE = "Lost landing target while landing";
 
@@ -102,6 +109,7 @@ PrecLand::on_activation()
 	_sp_pev = matrix::Vector2f(0, 0);
 	_sp_pev_prev = matrix::Vector2f(0, 0);
 	_last_slewrate_time = 0;
+	_abort_handover_sent = false;
 
 	switch_to_state_start();
 
@@ -151,6 +159,10 @@ PrecLand::on_active()
 
 	case PrecLandState::Fallback:
 		run_state_fallback();
+		break;
+
+	case PrecLandState::Abort:
+		run_state_abort();
 		break;
 
 	case PrecLandState::Done:
@@ -366,6 +378,40 @@ PrecLand::run_state_fallback()
 	// nothing to do, will land
 }
 
+void
+PrecLand::run_state_abort()
+{
+	if (_abort_handover_sent) {
+		// the command is out; hold position until the commander takes us out of this mode
+		return;
+	}
+
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	const float alt_error = fabsf(_navigator->get_global_position()->alt - pos_sp_triplet->current.alt);
+	const bool at_search_alt = alt_error < _navigator->get_altitude_acceptance_radius();
+	const bool climb_timed_out = hrt_elapsed_time(&_state_start_time) > ABORT_CLIMB_TIMEOUT;
+
+	if (!at_search_alt && !climb_timed_out) {
+		return;
+	}
+
+	mavlink_log_critical(_navigator->get_mavlink_log_pub(),
+			     "Landing target lost, holding position\t");
+	events::send(events::ID("prec_land_lost_target_hold"), {events::Log::Error, events::LogInternal::Info},
+		     "Landing target lost, holding position and switching to Position mode");
+
+	// The navigator cannot change the flight mode itself, so ask the commander for Position. If it
+	// refuses, we stay here holding the search altitude, which is still better than a blind descent.
+	vehicle_command_s vehicle_command{};
+	vehicle_command.command = vehicle_command_s::VEHICLE_CMD_DO_SET_MODE;
+	vehicle_command.param1 = 1.f; // MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+	vehicle_command.param2 = (float)PX4_CUSTOM_MAIN_MODE_POSCTL;
+	_navigator->publish_vehicle_command(vehicle_command);
+
+	_abort_handover_sent = true;
+}
+
 bool
 PrecLand::switch_to_state_start()
 {
@@ -449,6 +495,13 @@ PrecLand::switch_to_state_search()
 bool
 PrecLand::switch_to_state_fallback()
 {
+	if (_param_pld_lost_act.get() == 1) {
+		// The operator asked us not to commit to a landing we cannot see. Every caller of this
+		// function is a "gave up on the target" path, so the choice is made here once rather than
+		// at each of the six call sites.
+		return switch_to_state_abort();
+	}
+
 	print_state_switch_message("fallback");
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 	pos_sp_triplet->current.lat = _navigator->get_global_position()->lat;
@@ -458,6 +511,35 @@ PrecLand::switch_to_state_fallback()
 	_navigator->set_position_setpoint_triplet_updated();
 
 	_state = PrecLandState::Fallback;
+	_state_start_time = hrt_absolute_time();
+	return true;
+}
+
+bool
+PrecLand::switch_to_state_abort()
+{
+	print_state_switch_message("abort");
+
+	vehicle_local_position_s *vehicle_local_position = _navigator->get_local_position();
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	// Hold the current horizontal position and climb to the search altitude. Deliberately never
+	// descends: we are here because the target was lost, and giving up altitude while blind is the
+	// one thing this action exists to avoid.
+	const float search_alt_amsl = vehicle_local_position->ref_alt + _param_pld_srch_alt.get();
+	const float current_alt_amsl = _navigator->get_global_position()->alt;
+
+	pos_sp_triplet->current.lat = _navigator->get_global_position()->lat;
+	pos_sp_triplet->current.lon = _navigator->get_global_position()->lon;
+	pos_sp_triplet->current.alt = (search_alt_amsl > current_alt_amsl) ? search_alt_amsl : current_alt_amsl;
+	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	pos_sp_triplet->current.valid = true;
+	pos_sp_triplet->current.timestamp = hrt_absolute_time();
+	_navigator->set_position_setpoint_triplet_updated();
+
+	_abort_handover_sent = false;
+
+	_state = PrecLandState::Abort;
 	_state_start_time = hrt_absolute_time();
 	return true;
 }
@@ -529,6 +611,9 @@ bool PrecLand::check_state_conditions(PrecLandState state)
 		return true;
 
 	case PrecLandState::Fallback:
+		return true;
+
+	case PrecLandState::Abort:
 		return true;
 
 	default:
