@@ -116,7 +116,12 @@ private:
 	// feedforward. Single predicate so the setpoint type and the commanded velocity never disagree.
 	bool moving_target_ff_active() const;
 
-	// Absolute horizontal speed of the target, 0 when the feedforward is not active.
+	// Absolute horizontal velocity of the target in the local frame, clamped to the vehicle's cruise
+	// speed. Zero when the feedforward is not active. Single source of truth for both the commanded
+	// feedforward and the slew limiter's terminal speed, so the two can never disagree.
+	matrix::Vector2f target_absolute_velocity() const;
+
+	// Magnitude of target_absolute_velocity().
 	float target_absolute_speed() const;
 
 	landing_target_pose_s _target_pose{}; /**< precision landing target position */

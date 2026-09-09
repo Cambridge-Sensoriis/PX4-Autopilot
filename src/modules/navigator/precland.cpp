@@ -716,31 +716,42 @@ bool PrecLand::moving_target_ff_active() const
 	       && PX4_ISFINITE(local_pos->vx) && PX4_ISFINITE(local_pos->vy);
 }
 
-float PrecLand::target_absolute_speed() const
+matrix::Vector2f PrecLand::target_absolute_velocity() const
 {
 	if (!moving_target_ff_active()) {
-		return 0.f;
+		return matrix::Vector2f(0.f, 0.f);
 	}
 
 	const vehicle_local_position_s *local_pos = _navigator->get_local_position();
-	const matrix::Vector2f v_abs(local_pos->vx + _target_pose.vx_rel, local_pos->vy + _target_pose.vy_rel);
+	matrix::Vector2f v_abs(local_pos->vx + _target_pose.vx_rel, local_pos->vy + _target_pose.vy_rel);
 
-	return v_abs.length();
+	// The estimate is the vehicle's own velocity plus the relative one, so it is only as good as the
+	// cancellation between them. Flight testing over a *stationary* pad, where the truth is zero, has
+	// produced values above 16 m/s once the marker sits far enough off nadir for the relative velocity
+	// to stop tracking. Unclamped that is commanded straight back to the controller as "chase harder",
+	// which drives the vehicle further off nadir and degrades the estimate again.
+	// Cruise speed is the natural ceiling: a pad outrunning it cannot be caught, so a larger command
+	// can only ever be wrong.
+	if ((_param_xy_vel_cruise > FLT_EPSILON) && v_abs.longerThan(_param_xy_vel_cruise)) {
+		v_abs = v_abs.normalized() * _param_xy_vel_cruise;
+	}
+
+	return v_abs;
+}
+
+float PrecLand::target_absolute_speed() const
+{
+	return target_absolute_velocity().length();
 }
 
 void PrecLand::update_current_vel_setpoint()
 {
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
-	if (moving_target_ff_active()) {
-		const vehicle_local_position_s *local_pos = _navigator->get_local_position();
-		pos_sp_triplet->current.vx = local_pos->vx + _target_pose.vx_rel;
-		pos_sp_triplet->current.vy = local_pos->vy + _target_pose.vy_rel;
+	// Zero rather than NAN when the feedforward is inactive: reset_position_setpoint() leaves these
+	// at zero, and MissionBase::position_setpoint_equal compares them without a NAN guard.
+	const matrix::Vector2f v_abs = target_absolute_velocity();
 
-	} else {
-		// Zero rather than NAN: reset_position_setpoint() leaves these at zero, and
-		// MissionBase::position_setpoint_equal compares them without a NAN guard.
-		pos_sp_triplet->current.vx = 0.f;
-		pos_sp_triplet->current.vy = 0.f;
-	}
+	pos_sp_triplet->current.vx = v_abs(0);
+	pos_sp_triplet->current.vy = v_abs(1);
 }
