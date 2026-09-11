@@ -49,6 +49,9 @@
 
 #include <systemlib/err.h>
 #include <systemlib/mavlink_log.h>
+#include <px4_platform_common/events.h>
+
+#include <commander/px4_custom_mode.h>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/position_setpoint_triplet.h>
@@ -58,6 +61,10 @@
 #define SEC2USEC 1000000.0f
 
 #define STATE_TIMEOUT 10000000 // [us] Maximum time to spend in any state
+
+// [us] Hand over to Position mode even if the climb to the search altitude has not finished, so a
+// vehicle that cannot reach it does not sit in the abort state indefinitely.
+#define ABORT_CLIMB_TIMEOUT 20000000
 
 static constexpr const char *LOST_TARGET_ERROR_MESSAGE = "Lost landing target while landing";
 
@@ -102,6 +109,7 @@ PrecLand::on_activation()
 	_sp_pev = matrix::Vector2f(0, 0);
 	_sp_pev_prev = matrix::Vector2f(0, 0);
 	_last_slewrate_time = 0;
+	_abort_handover_sent = false;
 
 	switch_to_state_start();
 
@@ -116,6 +124,7 @@ PrecLand::on_active()
 
 	if (_target_pose_updated) {
 		_target_pose_valid = true;
+		_last_target_pose_rx = hrt_absolute_time();
 	}
 
 	if ((hrt_elapsed_time(&_target_pose.timestamp) / 1e6f) > _param_pld_btout.get()) {
@@ -150,6 +159,10 @@ PrecLand::on_active()
 
 	case PrecLandState::Fallback:
 		run_state_fallback();
+		break;
+
+	case PrecLandState::Abort:
+		run_state_abort();
 		break;
 
 	case PrecLandState::Done:
@@ -242,7 +255,8 @@ PrecLand::run_state_horizontal_approach()
 		return;
 	}
 
-	if (check_state_conditions(PrecLandState::DescendAboveTarget)) {
+	if (check_state_conditions(PrecLandState::DescendAboveTarget)
+	    && (_navigator->get_vstatus()->nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND)) {
 		if (!_point_reached_time) {
 			_point_reached_time = hrt_absolute_time();
 		}
@@ -260,13 +274,18 @@ PrecLand::run_state_horizontal_approach()
 	float x = _target_pose.x_abs;
 	float y = _target_pose.y_abs;
 
-	slewrate(x, y);
+	// Decelerate towards the target's own speed rather than to a standstill, so the setpoint
+	// hands over smoothly to the velocity feedforward instead of fighting it.
+	slewrate(x, y, target_absolute_speed());
 
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
 	pos_sp_triplet->current.alt = _approach_alt;
-	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	pos_sp_triplet->current.type = moving_target_ff_active()
+				       ? position_setpoint_s::SETPOINT_TYPE_POS_VEL_FF
+				       : position_setpoint_s::SETPOINT_TYPE_POSITION;
+	update_current_vel_setpoint();
 
 	_navigator->set_position_setpoint_triplet_updated();
 }
@@ -294,10 +313,23 @@ PrecLand::run_state_descend_above_target()
 		return;
 	}
 
-	// XXX need to transform to GPS coords because mc_pos_control only looks at that
-	_map_ref.reproject(_target_pose.x_abs, _target_pose.y_abs, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
+	float x = _target_pose.x_abs;
+	float y = _target_pose.y_abs;
 
+	// Descent is the phase where setpoint noise matters most: low, close in, and seconds from
+	// touchdown. Reprojecting the raw estimate here put unfiltered target position straight into
+	// the setpoint, so it gets the same limiting the approach uses. Entry to this state is only
+	// ever from the horizontal approach, which runs the slew limiter every cycle, so the filter
+	// state is already settled on the target and the transition introduces no step.
+	slewrate(x, y, target_absolute_speed());
+
+	// XXX need to transform to GPS coords because mc_pos_control only looks at that
+	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
+
+	// Stays LAND: the type drives the descent profile, land detector and gear, while the
+	// feedforward is carried orthogonally by the velocity fields.
 	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_LAND;
+	update_current_vel_setpoint();
 
 	_navigator->set_position_setpoint_triplet_updated();
 }
@@ -344,6 +376,40 @@ void
 PrecLand::run_state_fallback()
 {
 	// nothing to do, will land
+}
+
+void
+PrecLand::run_state_abort()
+{
+	if (_abort_handover_sent) {
+		// the command is out; hold position until the commander takes us out of this mode
+		return;
+	}
+
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	const float alt_error = fabsf(_navigator->get_global_position()->alt - pos_sp_triplet->current.alt);
+	const bool at_search_alt = alt_error < _navigator->get_altitude_acceptance_radius();
+	const bool climb_timed_out = hrt_elapsed_time(&_state_start_time) > ABORT_CLIMB_TIMEOUT;
+
+	if (!at_search_alt && !climb_timed_out) {
+		return;
+	}
+
+	mavlink_log_critical(_navigator->get_mavlink_log_pub(),
+			     "Landing target lost, holding position\t");
+	events::send(events::ID("prec_land_lost_target_hold"), {events::Log::Error, events::LogInternal::Info},
+		     "Landing target lost, holding position and switching to Position mode");
+
+	// The navigator cannot change the flight mode itself, so ask the commander for Position. If it
+	// refuses, we stay here holding the search altitude, which is still better than a blind descent.
+	vehicle_command_s vehicle_command{};
+	vehicle_command.command = vehicle_command_s::VEHICLE_CMD_DO_SET_MODE;
+	vehicle_command.param1 = 1.f; // MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+	vehicle_command.param2 = (float)PX4_CUSTOM_MAIN_MODE_POSCTL;
+	_navigator->publish_vehicle_command(vehicle_command);
+
+	_abort_handover_sent = true;
 }
 
 bool
@@ -429,6 +495,13 @@ PrecLand::switch_to_state_search()
 bool
 PrecLand::switch_to_state_fallback()
 {
+	if (_param_pld_lost_act.get() == 1) {
+		// The operator asked us not to commit to a landing we cannot see. Every caller of this
+		// function is a "gave up on the target" path, so the choice is made here once rather than
+		// at each of the six call sites.
+		return switch_to_state_abort();
+	}
+
 	print_state_switch_message("fallback");
 	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 	pos_sp_triplet->current.lat = _navigator->get_global_position()->lat;
@@ -438,6 +511,35 @@ PrecLand::switch_to_state_fallback()
 	_navigator->set_position_setpoint_triplet_updated();
 
 	_state = PrecLandState::Fallback;
+	_state_start_time = hrt_absolute_time();
+	return true;
+}
+
+bool
+PrecLand::switch_to_state_abort()
+{
+	print_state_switch_message("abort");
+
+	vehicle_local_position_s *vehicle_local_position = _navigator->get_local_position();
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	// Hold the current horizontal position and climb to the search altitude. Deliberately never
+	// descends: we are here because the target was lost, and giving up altitude while blind is the
+	// one thing this action exists to avoid.
+	const float search_alt_amsl = vehicle_local_position->ref_alt + _param_pld_srch_alt.get();
+	const float current_alt_amsl = _navigator->get_global_position()->alt;
+
+	pos_sp_triplet->current.lat = _navigator->get_global_position()->lat;
+	pos_sp_triplet->current.lon = _navigator->get_global_position()->lon;
+	pos_sp_triplet->current.alt = (search_alt_amsl > current_alt_amsl) ? search_alt_amsl : current_alt_amsl;
+	pos_sp_triplet->current.type = position_setpoint_s::SETPOINT_TYPE_POSITION;
+	pos_sp_triplet->current.valid = true;
+	pos_sp_triplet->current.timestamp = hrt_absolute_time();
+	_navigator->set_position_setpoint_triplet_updated();
+
+	_abort_handover_sent = false;
+
+	_state = PrecLandState::Abort;
 	_state_start_time = hrt_absolute_time();
 	return true;
 }
@@ -511,12 +613,15 @@ bool PrecLand::check_state_conditions(PrecLandState state)
 	case PrecLandState::Fallback:
 		return true;
 
+	case PrecLandState::Abort:
+		return true;
+
 	default:
 		return false;
 	}
 }
 
-void PrecLand::slewrate(float &sp_x, float &sp_y)
+void PrecLand::slewrate(float &sp_x, float &sp_y, float v_terminal)
 {
 	matrix::Vector2f sp_curr(sp_x, sp_y);
 	uint64_t now = hrt_absolute_time();
@@ -545,25 +650,38 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 
 	_last_slewrate_time = now;
 
-	// limit the setpoint speed to the maximum cruise speed
+	// Both limits shape the setpoint towards a stationary point, and both fight a moving one. The
+	// cruise limit caps how fast the setpoint may travel, which caps how fast it can ever catch up.
+	// The acceleration limit starves the catch-up transient: closing on a pad at cruise speed means
+	// first accelerating the setpoint to the pad's speed, falling further behind the whole time,
+	// then exceeding it to claw the gap back, and rate-limiting that can leave it never converging.
+	// So neither applies once we are chasing something that moves; the deceleration limit below,
+	// which is aware of the pad's own speed, is what shapes the moving-target approach.
 	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
-	if (sp_vel.length() > _param_xy_vel_cruise) {
-		sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
-		sp_curr = _sp_pev + sp_vel * dt;
+	if (v_terminal < FLT_EPSILON) {
+		// limit the setpoint speed to the maximum cruise speed
+		if (sp_vel.length() > _param_xy_vel_cruise) {
+			sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
+			sp_curr = _sp_pev + sp_vel * dt;
+		}
+
+		// limit the setpoint acceleration to the maximum acceleration
+		matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
+
+		if (sp_acc.length() > _param_acceleration_hor) {
+			sp_acc = sp_acc.normalized() * _param_acceleration_hor;
+			sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
+		}
 	}
 
-	// limit the setpoint acceleration to the maximum acceleration
-	matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
-
-	if (sp_acc.length() > _param_acceleration_hor) {
-		sp_acc = sp_acc.normalized() * _param_acceleration_hor;
-		sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
-	}
-
-	// limit the setpoint speed such that we can stop at the setpoint given the maximum acceleration/deceleration
-	float max_spd = sqrtf(_param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
-			      sp_y))).length());
+	// Limit the setpoint speed such that it can decelerate to v_terminal by the time it reaches
+	// the target, from v^2 = v_terminal^2 + 2*a*d with the factor of 2 dropped to keep the
+	// existing sqrt(a*d) convention. v_terminal is 0 for a static target, so this reduces to the
+	// original "stop at the setpoint" limit.
+	float max_spd = sqrtf(v_terminal * v_terminal
+			      + _param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
+					      sp_y))).length());
 	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
 	if (sp_vel.length() > max_spd) {
@@ -576,4 +694,64 @@ void PrecLand::slewrate(float &sp_x, float &sp_y)
 
 	sp_x = sp_curr(0);
 	sp_y = sp_curr(1);
+}
+
+bool PrecLand::moving_target_ff_active() const
+{
+	const vehicle_local_position_s *local_pos = _navigator->get_local_position();
+
+	// The estimator publishes rel_vel_valid unconditionally and _target_pose keeps its last
+	// contents after the estimator stops publishing, so neither is evidence the velocity is still
+	// current. Time it from when an estimate last arrived. Deliberately not from
+	// _target_pose.timestamp: that is the measurement time, which the estimator has already
+	// forward-predicted past, and it lags by up to MAX_MEASUREMENT_LAG_US on a real sensor. Gating
+	// on it drops the feedforward on exactly the healthy data it was meant to protect.
+	const bool velocity_is_fresh = _target_pose_valid && (_last_target_pose_rx != 0)
+				       && (hrt_elapsed_time(&_last_target_pose_rx) < MOVING_TARGET_FF_TIMEOUT_US);
+
+	return _param_pld_mov_tgt_ff.get() && !_target_pose.is_static && _target_pose.rel_vel_valid
+	       && velocity_is_fresh
+	       && local_pos->v_xy_valid
+	       && PX4_ISFINITE(_target_pose.vx_rel) && PX4_ISFINITE(_target_pose.vy_rel)
+	       && PX4_ISFINITE(local_pos->vx) && PX4_ISFINITE(local_pos->vy);
+}
+
+matrix::Vector2f PrecLand::target_absolute_velocity() const
+{
+	if (!moving_target_ff_active()) {
+		return matrix::Vector2f(0.f, 0.f);
+	}
+
+	const vehicle_local_position_s *local_pos = _navigator->get_local_position();
+	matrix::Vector2f v_abs(local_pos->vx + _target_pose.vx_rel, local_pos->vy + _target_pose.vy_rel);
+
+	// The estimate is the vehicle's own velocity plus the relative one, so it is only as good as the
+	// cancellation between them. Flight testing over a *stationary* pad, where the truth is zero, has
+	// produced values above 16 m/s once the marker sits far enough off nadir for the relative velocity
+	// to stop tracking. Unclamped that is commanded straight back to the controller as "chase harder",
+	// which drives the vehicle further off nadir and degrades the estimate again.
+	// Cruise speed is the natural ceiling: a pad outrunning it cannot be caught, so a larger command
+	// can only ever be wrong.
+	if ((_param_xy_vel_cruise > FLT_EPSILON) && v_abs.longerThan(_param_xy_vel_cruise)) {
+		v_abs = v_abs.normalized() * _param_xy_vel_cruise;
+	}
+
+	return v_abs;
+}
+
+float PrecLand::target_absolute_speed() const
+{
+	return target_absolute_velocity().length();
+}
+
+void PrecLand::update_current_vel_setpoint()
+{
+	position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+
+	// Zero rather than NAN when the feedforward is inactive: reset_position_setpoint() leaves these
+	// at zero, and MissionBase::position_setpoint_equal compares them without a NAN guard.
+	const matrix::Vector2f v_abs = target_absolute_velocity();
+
+	pos_sp_triplet->current.vx = v_abs(0);
+	pos_sp_triplet->current.vy = v_abs(1);
 }

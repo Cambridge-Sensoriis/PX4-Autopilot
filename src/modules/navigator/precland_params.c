@@ -119,3 +119,30 @@ PARAM_DEFINE_FLOAT(PLD_SRCH_TOUT, 10.0f);
  * @group Precision Land
  */
 PARAM_DEFINE_INT32(PLD_MAX_SRCH, 3);
+
+/**
+ * Moving target feedforward enable
+ *
+ * Enable feedforward of the moving landing target velocity to the vehicle.
+ *
+ * @boolean
+ * @group Precision Land
+ */
+PARAM_DEFINE_INT32(PLD_MOV_TGT_FF, 0);
+
+/**
+ * Action when the landing target is lost
+ *
+ * What to do once the landing target is lost and all PLD_MAX_SRCH search attempts have been used
+ * up. Applies to both precision landing and precision tether.
+ *
+ * Land descends blind at the current position, which over a moving platform means landing next to
+ * it rather than on it. Hold position climbs to PLD_SRCH_ALT, holds there and switches to Position
+ * mode, leaving the vehicle under operator control instead of committing to a landing it cannot
+ * see.
+ *
+ * @value 0 Land
+ * @value 1 Hold position and switch to Position mode
+ * @group Precision Land
+ */
+PARAM_DEFINE_INT32(PLD_LOST_ACT, 0);

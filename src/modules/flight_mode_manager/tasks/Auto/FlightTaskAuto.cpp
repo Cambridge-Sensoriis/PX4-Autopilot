@@ -133,6 +133,20 @@ bool FlightTaskAuto::update()
 		_prepareLandSetpoints();
 		break;
 
+	case WaypointType::position_vel_ff:
+		// Position waypoint with the target's velocity fed forward, for tracking a moving target.
+		// PositionSmoothing adds the feedforward on top of the velocity it derives from the waypoint
+		// geometry, and that derived term decays to zero on arrival, so the vehicle converges to the
+		// target's velocity instead of braking to zero ground speed.
+		//
+		// Deliberately _triplet_target rather than _target: the internal waypoint states follow a
+		// track from the previous waypoint, which is meaningless for a target that keeps moving.
+		// Chase the target directly instead.
+		_position_setpoint = _triplet_target;
+		_velocity_setpoint.xy() = Vector2f(_target_velocity);
+		_velocity_setpoint(2) = NAN; // Descent rate stays with the smoother
+		break;
+
 	case WaypointType::velocity:
 		// XY Velocity waypoint
 		// TODO : Rewiew that. What is the expected behavior?
@@ -227,6 +241,13 @@ void FlightTaskAuto::_prepareLandSetpoints()
 {
 	_velocity_setpoint.setNaN(); // Don't take over any smoothed velocity setpoint
 
+	// Horizontal velocity of a moving landing target, fed forward so the vehicle translates with it
+	// while descending. XY only, the descent rate below owns the Z axis.
+	// Tested for non-zero rather than just finite: reset_position_setpoint() leaves vx/vy at 0 rather
+	// than NAN, so every ordinary landing would otherwise look like a stationary target being tracked
+	// and lose its RC assistance. NAN is rejected here too, longerThan() being false for it.
+	const bool track_moving_target = Vector2f(_target_velocity).longerThan(FLT_EPSILON);
+
 	// Slow down automatic descend close to ground
 	float vertical_speed = math::interpolate(_dist_to_ground,
 			       _param_mpc_land_alt2.get(), _param_mpc_land_alt1.get(),
@@ -248,8 +269,9 @@ void FlightTaskAuto::_prepareLandSetpoints()
 	// Update xy-position in case of landing position changes (etc. precision landing)
 	_land_position = Vector3f(_target(0), _target(1), NAN);
 
-	// User input assisted landing
-	if (_param_mpc_land_rc_help.get() && _sticks.checkAndUpdateStickInputs()) {
+	// User input assisted landing. Suppressed while tracking a moving target: the stick path below
+	// writes _velocity_setpoint.xy() itself, which would discard the feedforward.
+	if (!track_moving_target && _param_mpc_land_rc_help.get() && _sticks.checkAndUpdateStickInputs()) {
 		// Stick full up -1 -> stop, stick full down 1 -> double the speed
 		vertical_speed *= (1 - _sticks.getThrottleZeroCenteredExpo());
 
@@ -296,6 +318,11 @@ void FlightTaskAuto::_prepareLandSetpoints()
 
 	_position_setpoint = _land_position; // The last element of the land position has to stay NAN
 	_yaw_setpoint = _land_heading;
+
+	if (track_moving_target) {
+		_velocity_setpoint.xy() = Vector2f(_target_velocity);
+	}
+
 	_velocity_setpoint(2) = vertical_speed;
 	_gear.landing_gear = landing_gear_s::GEAR_DOWN;
 }
@@ -356,6 +383,7 @@ bool FlightTaskAuto::_evaluateTriplets()
 		// Best we can do is to just set all waypoints to current state
 		_prev_prev_wp = _triplet_prev_wp = _triplet_target = _triplet_next_wp = _position;
 		_type = WaypointType::loiter;
+		_target_velocity.setNaN();
 		_yaw_setpoint = _yaw;
 		_yawspeed_setpoint = NAN;
 		_target_acceptance_radius = _sub_triplet_setpoint.get().current.acceptance_radius;
@@ -364,6 +392,13 @@ bool FlightTaskAuto::_evaluateTriplets()
 	}
 
 	_type = (WaypointType)_sub_triplet_setpoint.get().current.type;
+
+	// Velocity of the target waypoint. Already in local NED, so unlike lat/lon it needs no projection,
+	// and it is unaffected by a shift of the local reference origin. NAN on any axis the navigator
+	// does not command, which leaves that axis entirely to the smoother.
+	_target_velocity = Vector3f(_sub_triplet_setpoint.get().current.vx,
+				    _sub_triplet_setpoint.get().current.vy,
+				    _sub_triplet_setpoint.get().current.vz);
 
 	// Prioritize cruise speed from the triplet when it's valid and more recent than the previously commanded cruise speed
 	const float cruise_speed_from_triplet = _sub_triplet_setpoint.get().current.cruising_speed;

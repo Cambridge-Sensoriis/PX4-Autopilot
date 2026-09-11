@@ -56,6 +56,7 @@ enum class PrecLandState {
 	FinalApproach, // Final landing approach, even without landing target
 	Search, // Search for landing target
 	Fallback, // Fallback landing method
+	Abort, // Climb to the search altitude and hand over to Position mode
 	Done // Done landing
 };
 
@@ -91,6 +92,7 @@ private:
 	void run_state_final_approach();
 	void run_state_search();
 	void run_state_fallback();
+	void run_state_abort();
 
 	// attempt to switch to a different state. Returns true if state change was successful, false otherwise
 	bool switch_to_state_start();
@@ -99,13 +101,28 @@ private:
 	bool switch_to_state_final_approach();
 	bool switch_to_state_search();
 	bool switch_to_state_fallback();
+	bool switch_to_state_abort();
 	bool switch_to_state_done();
 
 	void print_state_switch_message(const char *state_name);
 
 	// check if a given state could be changed into. Return true if possible to transition to state, false otherwise
 	bool check_state_conditions(PrecLandState state);
-	void slewrate(float &sp_x, float &sp_y);
+
+	void slewrate(float &sp_x, float &sp_y, float v_terminal);
+	void update_current_vel_setpoint();
+
+	// True when the target is moving, its velocity is usable, and the operator has enabled
+	// feedforward. Single predicate so the setpoint type and the commanded velocity never disagree.
+	bool moving_target_ff_active() const;
+
+	// Absolute horizontal velocity of the target in the local frame, clamped to the vehicle's cruise
+	// speed. Zero when the feedforward is not active. Single source of truth for both the commanded
+	// feedforward and the slew limiter's terminal speed, so the two can never disagree.
+	matrix::Vector2f target_absolute_velocity() const;
+
+	// Magnitude of target_absolute_velocity().
+	float target_absolute_speed() const;
 
 	landing_target_pose_s _target_pose{}; /**< precision landing target position */
 
@@ -117,6 +134,15 @@ private:
 
 	uint64_t _state_start_time{0}; /**< time when we entered current state */
 	uint64_t _last_slewrate_time{0}; /**< time when we last limited setpoint changes */
+
+	uint64_t _last_target_pose_rx{0}; /**< when we last received an estimate, NOT when it was measured */
+
+	/** How long we may go without a new estimate before dropping the velocity feedforward. Timed
+	 *  from reception, not from _target_pose.timestamp: that is the measurement time, and the
+	 *  estimator forward-predicts past it, so an old measurement stamp does not mean a stale
+	 *  estimate. The estimator publishes at 50 Hz while it is tracking, so this only trips when it
+	 *  has actually stopped. */
+	static constexpr hrt_abstime MOVING_TARGET_FF_TIMEOUT_US = 500000;
 	uint64_t _target_acquired_time{0}; /**< time when we first saw the landing target during search */
 	uint64_t _point_reached_time{0}; /**< time when we reached a setpoint */
 
@@ -132,13 +158,18 @@ private:
 
 	bool _is_activated {false}; /**< indicates if precland is activated */
 
+	/**< Position mode handover requested, so it is not published again every cycle */
+	bool _abort_handover_sent{false};
+
 	DEFINE_PARAMETERS(
 		(ParamFloat<px4::params::PLD_BTOUT>) _param_pld_btout,
 		(ParamFloat<px4::params::PLD_HACC_RAD>) _param_pld_hacc_rad,
 		(ParamFloat<px4::params::PLD_FAPPR_ALT>) _param_pld_fappr_alt,
 		(ParamFloat<px4::params::PLD_SRCH_ALT>) _param_pld_srch_alt,
 		(ParamFloat<px4::params::PLD_SRCH_TOUT>) _param_pld_srch_tout,
-		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch
+		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch,
+		(ParamInt<px4::params::PLD_MOV_TGT_FF>) _param_pld_mov_tgt_ff,
+		(ParamInt<px4::params::PLD_LOST_ACT>) _param_pld_lost_act
 	)
 
 	// non-navigator parameters

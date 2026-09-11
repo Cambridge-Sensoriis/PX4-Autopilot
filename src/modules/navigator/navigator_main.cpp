@@ -811,6 +811,7 @@ void Navigator::run()
 			break;
 
 		case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND:
+		case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECTETHER:
 			_pos_sp_triplet_published_invalid_once = false;
 			navigation_mode_new = &_precland;
 			_precland.set_mode(PrecLandMode::Required);

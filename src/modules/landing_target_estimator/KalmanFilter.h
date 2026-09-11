@@ -101,9 +101,10 @@ public:
 	 * Update the state estimate with a measurement
 	 * @param meas    state measeasurement
 	 * @param measUnc measurement uncertainty
-	 * @return update success (measurement not rejected)
+	 * @param force   if true, fuse without consulting the outlier gate
+	 * @return true if the measurement was fused (always true when force is set)
 	 */
-	bool update(float meas, float measUnc);
+	bool update(float meas, float measUnc, bool force = false);
 
 	/**
 	 * Get the current filter state

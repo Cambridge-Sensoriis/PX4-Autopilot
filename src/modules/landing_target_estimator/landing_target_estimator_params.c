@@ -57,6 +57,19 @@
 PARAM_DEFINE_INT32(LTEST_MODE, 0);
 
 /**
+ * Route MAVLink LANDING_TARGET position reports through the LTEST Kalman filter
+ *
+ * If enabled, publishes landing_target_report (consumed by LTEST) instead of
+ * landing_target_pose directly. Required for moving/tethered targets, where
+ * relative velocity for feedforward must come from the KF rather than a raw
+ * position-only report.
+ *
+ * @boolean
+ * @group Landing Target Estimator
+ */
+PARAM_DEFINE_INT32(LTEST_MAV_KF, 0);
+
+/**
  * Acceleration uncertainty
  *
  * Variance of acceleration measurement used for landing target position prediction.
@@ -71,17 +84,38 @@ PARAM_DEFINE_INT32(LTEST_MODE, 0);
 PARAM_DEFINE_FLOAT(LTEST_ACC_UNC, 10.0f);
 
 /**
- * Landing target measurement uncertainty
+ * Landing target measurement noise gradient
  *
- * Variance of the landing target measurement from the driver.
+ * Standard deviation of the landing target measurement per meter of range to the target.
+ * Landing target sensors measure a bearing, so the lateral error of a measurement grows with
+ * the distance to the target. For a measurement already expressed in meters this is the noise
+ * of the bearing the sensor derived it from.
  * Higher values result in less aggressive following of the measurement and a smoother output as well as fewer rejected measurements.
  *
- * @unit tan(rad)^2
+ * @unit m/m
+ * @min 0.0
  * @decimal 4
  *
  * @group Landing Target Estimator
  */
-PARAM_DEFINE_FLOAT(LTEST_MEAS_UNC, 0.005f);
+PARAM_DEFINE_FLOAT(LTEST_MEAS_GRAD, 0.07f);
+
+/**
+ * Landing target measurement noise floor
+ *
+ * Constant term of the landing target measurement standard deviation, added to the range
+ * dependent part.
+ * Without a floor the modelled noise collapses towards zero as the vehicle approaches the
+ * target, which drives the outlier gate to reject genuine measurements just before touchdown
+ * and leaves the precision landing flying to the last accepted position.
+ *
+ * @unit m
+ * @min 0.0
+ * @decimal 3
+ *
+ * @group Landing Target Estimator
+ */
+PARAM_DEFINE_FLOAT(LTEST_MEAS_BASE, 0.05f);
 
 /**
  * Initial landing target position uncertainty
@@ -187,3 +221,26 @@ PARAM_DEFINE_FLOAT(LTEST_SENS_POS_Y, 0.0f);
  *
  */
 PARAM_DEFINE_FLOAT(LTEST_SENS_POS_Z, 0.0f);
+
+/**
+ * Landing target measurement lag
+ *
+ * Fixed sensor lag that the measurement timestamp does not already account for, such as the time
+ * between a frame being exposed and the sender timestamping the report it produced.
+ *
+ * The estimator derives the rest of the lag from the measurement timestamp on its own. This
+ * parameter is added on top, and is the only compensation available when the sender does not
+ * timestamp its measurements or MAVLink timesync has not converged.
+ *
+ * Only used for moving targets (LTEST_MODE), a stationary one does not move while the measurement
+ * is in flight.
+ *
+ * @unit s
+ * @min 0.0
+ * @max 0.5
+ * @decimal 3
+ * @increment 0.01
+ * @group Landing Target Estimator
+ *
+ */
+PARAM_DEFINE_FLOAT(LTEST_LAG, 0.0f);

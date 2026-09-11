@@ -85,7 +85,7 @@ void KalmanFilter::predict(float dt, float acc, float acc_unc)
 	_covariance = A * _covariance * A.transpose() + process_noise;
 }
 
-bool KalmanFilter::update(float meas, float measUnc)
+bool KalmanFilter::update(float meas, float measUnc, bool force)
 {
 
 	// H = [1, 0]
@@ -94,12 +94,14 @@ bool KalmanFilter::update(float meas, float measUnc)
 	// H * P * H^T simply selects P(0,0)
 	_innovCov = _covariance(0, 0) + measUnc;
 
-	// outlier rejection
-	float beta = _residual / _innovCov * _residual;
+	if (!force) {
+		// outlier rejection, NIS gate at 5% false alarm probability
+		// (chi-squared, 1 degree of freedom, 95th percentile = 3.84)
+		const float beta = _residual / _innovCov * _residual;
 
-	// 5% false alarm probability
-	if (beta > 3.84f) {
-		return false;
+		if (beta > 3.84f) {
+			return false;
+		}
 	}
 
 	matrix::Vector<float, 2> kalmanGain;

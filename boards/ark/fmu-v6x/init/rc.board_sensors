@@ -22,7 +22,7 @@ fi
 if param compare SENS_EN_INA226 1
 then
 	# Start Digital power monitors
-	ina226 -X -b 1 -t 1 -k start
+	ina226 -X -b 1 -t 1 -a 0x40 -k start
 
 	if [ $HAVE_PM2 = yes ]
 	then
@@ -92,6 +92,11 @@ then
 	# Internal SPI bus IIM42653 with SPIX measured frequency of 32.051kHz
 	#iim42653 -R 6 -s -b 3 -C 32051 start
 	iim42653 -R 6 -s -b 3 start
+fi
+
+if param greater -s SENS_EN_SF1XX 0
+then
+    lightware_laser_i2c start -X -R 0
 fi
 
 # Internal magnetometer on I2C
