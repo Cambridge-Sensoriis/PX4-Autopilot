@@ -47,6 +47,7 @@
 #include <math.h>
 #include <fcntl.h>
 
+#include <lib/mathlib/math/Limits.hpp>
 #include <systemlib/err.h>
 #include <systemlib/mavlink_log.h>
 #include <px4_platform_common/events.h>
@@ -111,6 +112,9 @@ PrecLand::on_activation()
 	_last_slewrate_time = 0;
 	_abort_handover_sent = false;
 
+	_target_vel_filter.reset(matrix::Vector2f(0.f, 0.f));
+	_last_target_vel_filter_time = 0;
+
 	switch_to_state_start();
 
 	_is_activated = true;
@@ -130,6 +134,11 @@ PrecLand::on_active()
 	if ((hrt_elapsed_time(&_target_pose.timestamp) / 1e6f) > _param_pld_btout.get()) {
 		_target_pose_valid = false;
 	}
+
+	// Before the state handlers run: they read the filtered velocity through
+	// target_absolute_velocity(), and both the commanded feedforward and the slew limiter's terminal
+	// speed have to come from the same value within one cycle.
+	update_target_velocity_filter();
 
 	// stop if we are landed
 	if (_navigator->get_land_detected()->landed) {
@@ -716,7 +725,7 @@ bool PrecLand::moving_target_ff_active() const
 	       && PX4_ISFINITE(local_pos->vx) && PX4_ISFINITE(local_pos->vy);
 }
 
-matrix::Vector2f PrecLand::target_absolute_velocity() const
+matrix::Vector2f PrecLand::target_absolute_velocity_raw() const
 {
 	if (!moving_target_ff_active()) {
 		return matrix::Vector2f(0.f, 0.f);
@@ -732,11 +741,58 @@ matrix::Vector2f PrecLand::target_absolute_velocity() const
 	// which drives the vehicle further off nadir and degrades the estimate again.
 	// Cruise speed is the natural ceiling: a pad outrunning it cannot be caught, so a larger command
 	// can only ever be wrong.
+	// Clamped before the low-pass rather than after: the filter would otherwise carry a single 16 m/s
+	// outlier for a whole time constant, and a bounded input keeps the filter state bounded too.
 	if ((_param_xy_vel_cruise > FLT_EPSILON) && v_abs.longerThan(_param_xy_vel_cruise)) {
 		v_abs = v_abs.normalized() * _param_xy_vel_cruise;
 	}
 
 	return v_abs;
+}
+
+void PrecLand::update_target_velocity_filter()
+{
+	const uint64_t now = hrt_absolute_time();
+
+	// Reset rather than decay while the feedforward is unusable. Decaying would leave a stale
+	// velocity to be picked back up seconds later, when the pad may have stopped or turned, and
+	// target_absolute_velocity() has to agree with moving_target_ff_active() about being inactive.
+	if (!moving_target_ff_active()) {
+		_target_vel_filter.reset(matrix::Vector2f(0.f, 0.f));
+		_last_target_vel_filter_time = 0;
+		return;
+	}
+
+	const matrix::Vector2f v_raw = target_absolute_velocity_raw();
+
+	if (_last_target_vel_filter_time == 0) {
+		// First cycle since the feedforward became usable. Start on the measurement instead of ramping
+		// up from zero, which would command a stationary pad for a whole time constant just as the
+		// approach begins.
+		_target_vel_filter.reset(v_raw);
+		_last_target_vel_filter_time = now;
+		return;
+	}
+
+	// The navigator cycle is not perfectly regular, so derive alpha from the measured interval.
+	// Bounded below against a divide-by-zero alpha and above so that one long gap cannot hand the
+	// filter an alpha of nearly 1 and undo the filtering exactly when the data is worst.
+	const float dt = math::constrain(static_cast<float>(now - _last_target_vel_filter_time) / SEC2USEC,
+					 0.001f, 0.2f);
+	_last_target_vel_filter_time = now;
+
+	// tau of 0 gives alpha = 1, i.e. a pass-through, so the parameter disables the filter cleanly.
+	_target_vel_filter.setParameters(dt, _param_pld_ff_tau.get());
+	_target_vel_filter.update(v_raw);
+}
+
+matrix::Vector2f PrecLand::target_absolute_velocity() const
+{
+	if (!moving_target_ff_active()) {
+		return matrix::Vector2f(0.f, 0.f);
+	}
+
+	return _target_vel_filter.getState();
 }
 
 float PrecLand::target_absolute_speed() const

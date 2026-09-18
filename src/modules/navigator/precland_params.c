@@ -131,6 +131,32 @@ PARAM_DEFINE_INT32(PLD_MAX_SRCH, 3);
 PARAM_DEFINE_INT32(PLD_MOV_TGT_FF, 0);
 
 /**
+ * Moving target velocity feedforward time constant
+ *
+ * Time constant of the low-pass applied to the target velocity before it is commanded as a
+ * feedforward. Only used when PLD_MOV_TGT_FF is enabled.
+ *
+ * The target velocity is derived as the vehicle's own velocity plus the relative one, so its noise
+ * comes from the imperfect cancellation between the two rather than from any real motion of the
+ * pad. Unfiltered it slews far faster than MPC_ACC_HOR, which pins the trajectory generator against
+ * MPC_JERK_AUTO and adds more phase lag than the feedforward removes.
+ *
+ * A real platform's velocity changes slowly. The filter has unity DC gain, so a platform holding a
+ * constant velocity costs nothing once settled; the penalty is only while it accelerates, where the
+ * feedforward trails the true velocity by roughly the platform's acceleration times this time
+ * constant. Raise it if the feedforward looks noisy, lower it if the vehicle trails a platform that
+ * accelerates hard. Zero disables the filter and commands the raw estimate.
+ *
+ * @unit s
+ * @min 0.0
+ * @max 5.0
+ * @decimal 2
+ * @increment 0.1
+ * @group Precision Land
+ */
+PARAM_DEFINE_FLOAT(PLD_FF_TAU, 1.0f);
+
+/**
  * Action when the landing target is lost
  *
  * What to do once the landing target is lost and all PLD_MAX_SRCH search attempts have been used

@@ -42,6 +42,7 @@
 
 #include <matrix/math.hpp>
 #include <lib/geo/geo.h>
+#include <lib/mathlib/math/filter/AlphaFilter.hpp>
 #include <px4_platform_common/module_params.h>
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/landing_target_pose.h>
@@ -116,10 +117,20 @@ private:
 	// feedforward. Single predicate so the setpoint type and the commanded velocity never disagree.
 	bool moving_target_ff_active() const;
 
-	// Absolute horizontal velocity of the target in the local frame, clamped to the vehicle's cruise
-	// speed. Zero when the feedforward is not active. Single source of truth for both the commanded
-	// feedforward and the slew limiter's terminal speed, so the two can never disagree.
+	// Absolute horizontal velocity of the target in the local frame, low-pass filtered and clamped to
+	// the vehicle's cruise speed. Zero when the feedforward is not active. Single source of truth for
+	// both the commanded feedforward and the slew limiter's terminal speed, so the two can never
+	// disagree. Reads the filter state, so it is only as fresh as the last
+	// update_target_velocity_filter() call.
 	matrix::Vector2f target_absolute_velocity() const;
+
+	// Unfiltered absolute horizontal velocity of the target, clamped to cruise speed. Only the input
+	// to the filter; nothing downstream of the filter should use this.
+	matrix::Vector2f target_absolute_velocity_raw() const;
+
+	// Advance the target velocity low-pass. Must be called exactly once per cycle, before any state
+	// handler reads target_absolute_velocity().
+	void update_target_velocity_filter();
 
 	// Magnitude of target_absolute_velocity().
 	float target_absolute_speed() const;
@@ -152,6 +163,18 @@ private:
 	matrix::Vector2f _sp_pev;
 	matrix::Vector2f _sp_pev_prev;
 
+	/** Low-pass on the commanded target velocity. The raw estimate is the vehicle's own velocity plus
+	 *  the relative one, so its noise is dominated by the imperfect cancellation between the two
+	 *  rather than by any real motion of the pad. Flight logs over a stationary pad show ~0.15 m/s
+	 *  rms on a signal whose truth is zero, slewing at ~15 m/s^2 -- roughly ten times MPC_ACC_HOR.
+	 *  That lands straight on VelocitySmoothing::updateDurations() as a fresh velocity target every
+	 *  cycle, which pins the trajectory generator against MPC_JERK_AUTO and costs far more phase lag
+	 *  than the feedforward buys back. A pad's real velocity is a low-frequency signal and the filter
+	 *  has unity DC gain, so a pad at constant velocity costs nothing once settled; the penalty is
+	 *  confined to how hard the pad accelerates. See PLD_FF_TAU. */
+	AlphaFilter<matrix::Vector2f> _target_vel_filter{};
+	uint64_t _last_target_vel_filter_time{0}; /**< when the velocity low-pass was last advanced */
+
 	PrecLandState _state{PrecLandState::Start};
 
 	PrecLandMode _mode{PrecLandMode::Opportunistic};
@@ -169,6 +192,7 @@ private:
 		(ParamFloat<px4::params::PLD_SRCH_TOUT>) _param_pld_srch_tout,
 		(ParamInt<px4::params::PLD_MAX_SRCH>) _param_pld_max_srch,
 		(ParamInt<px4::params::PLD_MOV_TGT_FF>) _param_pld_mov_tgt_ff,
+		(ParamFloat<px4::params::PLD_FF_TAU>) _param_pld_ff_tau,
 		(ParamInt<px4::params::PLD_LOST_ACT>) _param_pld_lost_act
 	)
 
