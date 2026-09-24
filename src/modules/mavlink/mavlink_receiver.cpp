@@ -2484,6 +2484,25 @@ MavlinkReceiver::handle_message_landing_target(mavlink_message_t *msg)
 	mavlink_landing_target_t landing_target;
 	mavlink_msg_landing_target_decode(msg, &landing_target);
 
+	if (landing_target.position_valid && landing_target.frame == MAV_FRAME_LOCAL_FRD) {
+		vehicle_attitude_s vehicle_attitude{};
+		_vehicle_attitude_sub.copy(&vehicle_attitude);
+		const matrix::Dcmf R{matrix::Quatf{vehicle_attitude.q}};
+		const float yaw = matrix::Eulerf{R}(2);
+
+		vehicle_local_position_s local_pos{};
+		_vehicle_local_position_sub.copy(&local_pos);
+
+		const float distance_horizontal = sqrtf(landing_target.x * landing_target.x
+								       + landing_target.y * landing_target.y);
+		const float angle_frd = atan2f(landing_target.y, landing_target.x);
+
+		landing_target.x = local_pos.x + distance_horizontal * cosf(yaw + angle_frd);
+		landing_target.y = local_pos.y + distance_horizontal * sinf(yaw + angle_frd);
+		landing_target.z += local_pos.z;
+		landing_target.frame = MAV_FRAME_LOCAL_NED;
+	}
+
 	if (landing_target.position_valid) {
 		if (landing_target.frame != MAV_FRAME_LOCAL_NED) {
 			// We only support MAV_FRAME_LOCAL_NED for position measurements.
