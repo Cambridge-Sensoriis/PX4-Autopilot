@@ -106,7 +106,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("position_controller_landing_status", 100);
 	add_optional_topic("pure_pursuit_status", 100);
 	add_topic("goto_setpoint", 200);
-	add_topic("position_setpoint_triplet", 200);
+	add_topic("position_setpoint_triplet");
 	add_optional_topic("px4io_status");
 	add_topic("radio_status");
 	add_optional_topic("rover_attitude_setpoint", 100);
@@ -130,7 +130,7 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic("takeoff_status", 1000);
 	add_optional_topic("tecs_status", 200);
 	add_optional_topic("tiltrotor_extra_controls", 100);
-	add_topic("trajectory_setpoint", 200);
+	add_topic("trajectory_setpoint", 20);
 	add_topic("transponder_report");
 	add_topic("vehicle_acceleration", 50);
 	add_topic("vehicle_air_data", 200);
@@ -144,8 +144,8 @@ void LoggedTopics::add_default_topics()
 	add_topic("vehicle_global_position", 200);
 	add_topic("vehicle_gps_position", 100);
 	add_topic("vehicle_land_detected");
-	add_topic("vehicle_local_position", 100);
-	add_topic("vehicle_local_position_setpoint", 100);
+	add_topic("vehicle_local_position", 20);
+	add_topic("vehicle_local_position_setpoint", 20);
 	add_topic("vehicle_magnetometer", 200);
 	add_topic("vehicle_rates_setpoint", 20);
 	add_topic("vehicle_roi", 1000);
@@ -188,7 +188,7 @@ void LoggedTopics::add_default_topics()
 	// log all raw sensors at minimal rate (at least 1 Hz)
 	add_topic_multi("battery_status", 200, 2);
 	add_topic_multi("differential_pressure", 1000, 2);
-	add_topic_multi("distance_sensor", 1000, 2);
+	add_topic_multi("distance_sensor", 50, 2);
 	add_optional_topic_multi("sensor_accel", 1000, 4);
 	add_optional_topic_multi("sensor_baro", 1000, 4);
 	add_topic_multi("sensor_gps", 1000, 2);
