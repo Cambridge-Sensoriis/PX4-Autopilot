@@ -325,21 +325,46 @@ bool LandingTargetEstimator::_process_landing_target_report(const landing_target
 		return _process_angle_measurement(report.angle_x, report.angle_y, report.timestamp);
 	}
 
-	if (report.frame != landing_target_report_s::MAV_FRAME_LOCAL_NED) {
-		// Only local NED is supported for position measurements
+	if (!PX4_ISFINITE(report.pos_x) || !PX4_ISFINITE(report.pos_y) || !PX4_ISFINITE(report.pos_z)) {
 		return false;
 	}
 
+	switch (report.frame) {
+	case landing_target_report_s::MAV_FRAME_LOCAL_NED:
+		if (!_absolute_report_to_relative(report)) {
+			return false;
+		}
+
+		break;
+
+	case landing_target_report_s::MAV_FRAME_LOCAL_FRD:
+		if (!_local_frd_report_to_relative(report)) {
+			return false;
+		}
+
+		break;
+
+	default:
+		// Only local NED and local FRD are supported for position measurements
+		return false;
+	}
+
+	_target_position_report.timestamp = report.timestamp;
+
+	// Vertical separation drives the measurement noise model. Unlike the angle path this does not
+	// need a distance sensor, the report gives us the target altitude directly.
+	_dist_z = fabsf(_target_position_report.rel_pos_z);
+
+	return true;
+}
+
+bool LandingTargetEstimator::_absolute_report_to_relative(const landing_target_report_s &report)
+{
 	if (!_vehicleLocalPosition_valid || !_vehicleLocalPosition.xy_valid || !_vehicleLocalPosition.z_valid) {
 		// the measurement is absolute, we need our own position to make it relative
 		return false;
 	}
 
-	if (!PX4_ISFINITE(report.pos_x) || !PX4_ISFINITE(report.pos_y) || !PX4_ISFINITE(report.pos_z)) {
-		return false;
-	}
-
-	_target_position_report.timestamp = report.timestamp;
 	_target_position_report.rel_pos_x = report.pos_x - _vehicleLocalPosition.x + _params.offset_x;
 	_target_position_report.rel_pos_y = report.pos_y - _vehicleLocalPosition.y + _params.offset_y;
 	_target_position_report.rel_pos_z = report.pos_z - _vehicleLocalPosition.z;
@@ -360,9 +385,49 @@ bool LandingTargetEstimator::_process_landing_target_report(const landing_target
 		_target_position_report.rel_pos_y += (rel_vel_y + _vehicleLocalPosition.vy) * lag_s;
 	}
 
-	// Vertical separation drives the measurement noise model. Unlike the angle path this does not
-	// need a distance sensor, the report gives us the target altitude directly.
-	_dist_z = fabsf(_target_position_report.rel_pos_z);
+	return true;
+}
+
+bool LandingTargetEstimator::_local_frd_report_to_relative(const landing_target_report_s &report)
+{
+	if (!_vehicleAttitude_valid) {
+		// the measurement is expressed in the vehicle's heading frame, so without the heading there is
+		// nothing to rotate it with. Deliberately no check on the local position: not needing it is the
+		// point of this frame.
+		return false;
+	}
+
+	// Roll and pitch are zero by the convention this frame follows, so the heading alone rotates the
+	// measurement into the NED-aligned relative frame the filter works in.
+	//
+	// The heading used is the current one, not the one at the instant the sensor saw the target,
+	// which we do not keep. What that leaves is the heading turned during the lag, applied to the
+	// range: at a 20 deg/s yaw rate, 150 ms of lag and 5 m of range it is under 3 cm, and it falls
+	// with the range as the approach closes in.
+	const float yaw = matrix::Eulerf(matrix::Quatf(_vehicleAttitude.q)).psi();
+	const float cos_yaw = cosf(yaw);
+	const float sin_yaw = sinf(yaw);
+
+	_target_position_report.rel_pos_x = report.pos_x * cos_yaw - report.pos_y * sin_yaw + _params.offset_x;
+	_target_position_report.rel_pos_y = report.pos_x * sin_yaw + report.pos_y * cos_yaw + _params.offset_y;
+
+	// Down is common to both frames, so it carries across unrotated.
+	_target_position_report.rel_pos_z = report.pos_z;
+
+	// The measurement is already relative, so unlike the absolute case both the target's motion and
+	// the vehicle's own during the lag are missing from it. Their difference is exactly what the
+	// filter's velocity state holds, so the correction needs no vehicle velocity at all. That drops
+	// the term the absolute path depends on most: there the commanded result is only ever as good as
+	// the cancellation between two separately estimated velocities.
+	if ((_params.mode == TargetMode::Moving) && _estimator_initialized) {
+		float rel_pos_x, rel_vel_x, rel_pos_y, rel_vel_y;
+		_kalman_filter_x.getState(rel_pos_x, rel_vel_x);
+		_kalman_filter_y.getState(rel_pos_y, rel_vel_y);
+
+		const float lag_s = _measurement_lag(report.timestamp) / SEC2USEC;
+		_target_position_report.rel_pos_x += rel_vel_x * lag_s;
+		_target_position_report.rel_pos_y += rel_vel_y * lag_s;
+	}
 
 	return true;
 }

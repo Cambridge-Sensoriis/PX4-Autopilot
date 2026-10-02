@@ -2,9 +2,20 @@
 
 uint64 timestamp	# [us] Time since system start
 
-uint8 MAV_FRAME_LOCAL_NED = 1	# the only frame supported for position measurements
+uint8 MAV_FRAME_LOCAL_NED = 1	# absolute target position, obliges the sender to know where the vehicle is
+uint8 MAV_FRAME_LOCAL_FRD = 20	# target position relative to the vehicle, in its heading frame
 
-uint8 frame          	# MAV_FRAME (MAV_FRAME_BODY_FRD=12 for angles, MAV_FRAME_LOCAL_NED for position)
+uint8 frame          	# MAV_FRAME. Angles are conventionally MAV_FRAME_BODY_FRD and the frame is not
+                     	# checked for them. Positions are either MAV_FRAME_LOCAL_NED (absolute) or
+                     	# MAV_FRAME_LOCAL_FRD (relative to the vehicle).
+                     	#
+                     	# MAV_FRAME_LOCAL_FRD is taken to mean: origin at the vehicle's body origin,
+                     	# axes forward-right-down, rotated by heading only so roll and pitch are zero.
+                     	# That is the ArduPilot convention for this value and what landing target
+                     	# senders emit in practice. It is NOT the strict MAVLink definition, which
+                     	# puts the origin at a fixed point on the earth and aligns the axes to the
+                     	# heading at the moment the frame was created. Do not "correct" it to the
+                     	# spec reading: real senders would break.
 uint8 target_num     	# target ID
 uint8 type           	# LANDING_TARGET_TYPE enum
 

@@ -2485,8 +2485,23 @@ MavlinkReceiver::handle_message_landing_target(mavlink_message_t *msg)
 	mavlink_msg_landing_target_decode(msg, &landing_target);
 
 	if (landing_target.position_valid) {
-		if (landing_target.frame != MAV_FRAME_LOCAL_NED) {
-			// We only support MAV_FRAME_LOCAL_NED for position measurements.
+		// LOCAL_NED carries the target's absolute position, which obliges the sender to know where the
+		// vehicle is: it has to fetch our local position, and whatever it fetched is already stale by
+		// the time the image it belongs to has been processed. LOCAL_FRD carries the offset from the
+		// vehicle to the target in the vehicle's heading frame, which the sender can produce from the
+		// image alone. The frame conversion then happens on this side, against the freshest attitude
+		// we have, instead of being baked in against a position the sender had to guess at.
+		//
+		// LOCAL_FRD here means origin at the body origin, axes rotated by heading only. That is the
+		// ArduPilot convention for this frame value and what landing target senders actually emit, not
+		// the strict MAVLink definition (earth-fixed origin, axes frozen at frame creation), which
+		// would need an origin and reference heading that nothing tracks. Deliberately not accepting
+		// MAV_FRAME_BODY_FRD in its place: that one is defined against the vehicle's full attitude, so
+		// treating it as heading-only would silently ignore roll and pitch.
+		const bool frame_is_local_ned = (landing_target.frame == MAV_FRAME_LOCAL_NED);
+		const bool frame_is_local_frd = (landing_target.frame == MAV_FRAME_LOCAL_FRD);
+
+		if (!frame_is_local_ned && !frame_is_local_frd) {
 			mavlink_log_critical(&_mavlink_log_pub, "Landing target: coordinate frame %" PRIu8 " unsupported\t",
 					     landing_target.frame);
 			events::send<uint8_t>(events::ID("mavlink_rcv_lnd_target_unsup_coord"), events::Log::Error,
@@ -2499,6 +2514,16 @@ MavlinkReceiver::handle_message_landing_target(mavlink_message_t *msg)
 #if defined(CONFIG_MODULES_LANDING_TARGET_ESTIMATOR) && CONFIG_MODULES_LANDING_TARGET_ESTIMATOR
 		route_to_estimator = _param_ltest_mav_kf.get();
 #endif // CONFIG_MODULES_LANDING_TARGET_ESTIMATOR
+
+		if (frame_is_local_frd && !route_to_estimator) {
+			// The bypass below publishes an absolute position, and rotating a relative measurement into
+			// one needs the attitude and position that only the estimator holds. A vehicle-relative
+			// measurement is therefore only usable with LTEST_MAV_KF enabled.
+			mavlink_log_critical(&_mavlink_log_pub, "Landing target: LOCAL_FRD needs LTEST_MAV_KF\t");
+			events::send(events::ID("mavlink_rcv_lnd_target_frd_no_kf"), events::Log::Error,
+				     "Landing target: vehicle-relative position requires LTEST_MAV_KF");
+			return;
+		}
 
 		if (!route_to_estimator) {
 			// Send the position straight to the precision landing algorithm, bypassing the estimator.

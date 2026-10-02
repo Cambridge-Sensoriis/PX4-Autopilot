@@ -212,6 +212,24 @@ private:
 	hrt_abstime _measurement_lag(hrt_abstime measurement_timestamp);
 
 	/*
+	 * Turn a MAV_FRAME_LOCAL_NED report (the target's absolute position) into the relative
+	 * measurement the filter fuses, and compensate it for the measurement lag.
+	 */
+	bool _absolute_report_to_relative(const landing_target_report_s &report);
+
+	/*
+	 * Turn a MAV_FRAME_LOCAL_FRD report (the offset from the vehicle to the target, in the vehicle's
+	 * heading frame) into the relative measurement the filter fuses, and compensate it for the
+	 * measurement lag. Needs the attitude but not the local position, which is why a sender can
+	 * produce it without first having to ask where the vehicle is.
+	 *
+	 * Follows the ArduPilot reading of this frame value -- origin at the body origin, axes rotated by
+	 * heading only -- rather than the strict MAVLink one, because that is what senders emit. See
+	 * LandingTargetReport.msg.
+	 */
+	bool _local_frd_report_to_relative(const landing_target_report_s &report);
+
+	/*
 	 * Project an angular measurement (tangents of the offsets from the sensor boresight) onto the
 	 * ground plane to get the target position relative to the vehicle.
 	 * Shared by the IRLock driver and MAVLink LANDING_TARGET angle reports.
