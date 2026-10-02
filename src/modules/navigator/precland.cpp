@@ -136,8 +136,7 @@ PrecLand::on_active()
 	}
 
 	// Before the state handlers run: they read the filtered velocity through
-	// target_absolute_velocity(), and both the commanded feedforward and the slew limiter's terminal
-	// speed have to come from the same value within one cycle.
+	// target_absolute_velocity() when they command the feedforward.
 	update_target_velocity_filter();
 
 	// stop if we are landed
@@ -283,9 +282,7 @@ PrecLand::run_state_horizontal_approach()
 	float x = _target_pose.x_abs;
 	float y = _target_pose.y_abs;
 
-	// Decelerate towards the target's own speed rather than to a standstill, so the setpoint
-	// hands over smoothly to the velocity feedforward instead of fighting it.
-	slewrate(x, y, target_absolute_speed());
+	slewrate(x, y);
 
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
@@ -326,11 +323,11 @@ PrecLand::run_state_descend_above_target()
 	float y = _target_pose.y_abs;
 
 	// Descent is the phase where setpoint noise matters most: low, close in, and seconds from
-	// touchdown. Reprojecting the raw estimate here put unfiltered target position straight into
-	// the setpoint, so it gets the same limiting the approach uses. Entry to this state is only
-	// ever from the horizontal approach, which runs the slew limiter every cycle, so the filter
-	// state is already settled on the target and the transition introduces no step.
-	slewrate(x, y, target_absolute_speed());
+	// touchdown. A static target gets the same limiting the approach uses; a moving one is passed
+	// through, as in the approach. Entry to this state is only ever from the horizontal approach,
+	// which runs the slew limiter every cycle, so its history is already settled on the target and
+	// the transition introduces no step.
+	slewrate(x, y);
 
 	// XXX need to transform to GPS coords because mc_pos_control only looks at that
 	_map_ref.reproject(x, y, pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
@@ -630,7 +627,7 @@ bool PrecLand::check_state_conditions(PrecLandState state)
 	}
 }
 
-void PrecLand::slewrate(float &sp_x, float &sp_y, float v_terminal)
+void PrecLand::slewrate(float &sp_x, float &sp_y)
 {
 	matrix::Vector2f sp_curr(sp_x, sp_y);
 	uint64_t now = hrt_absolute_time();
@@ -659,38 +656,38 @@ void PrecLand::slewrate(float &sp_x, float &sp_y, float v_terminal)
 
 	_last_slewrate_time = now;
 
-	// Both limits shape the setpoint towards a stationary point, and both fight a moving one. The
-	// cruise limit caps how fast the setpoint may travel, which caps how fast it can ever catch up.
-	// The acceleration limit starves the catch-up transient: closing on a pad at cruise speed means
-	// first accelerating the setpoint to the pad's speed, falling further behind the whole time,
-	// then exceeding it to claw the gap back, and rate-limiting that can leave it never converging.
-	// So neither applies once we are chasing something that moves; the deceleration limit below,
-	// which is aware of the pad's own speed, is what shapes the moving-target approach.
-	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
-
-	if (v_terminal < FLT_EPSILON) {
-		// limit the setpoint speed to the maximum cruise speed
-		if (sp_vel.length() > _param_xy_vel_cruise) {
-			sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
-			sp_curr = _sp_pev + sp_vel * dt;
-		}
-
-		// limit the setpoint acceleration to the maximum acceleration
-		matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
-
-		if (sp_acc.length() > _param_acceleration_hor) {
-			sp_acc = sp_acc.normalized() * _param_acceleration_hor;
-			sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
-		}
+	if (moving_target_ff_active()) {
+		// Every limit here shapes the setpoint towards a point that stays put, and each one only
+		// holds it back from a point that moves. The flight task's position smoothing already
+		// shapes the approach to a moving target, with the feedforward added on top, so limiting it
+		// here as well just leaves the setpoint trailing the pad: flight logs had this stage alone
+		// up to 0.5 m behind the estimate at 4 m/s. Keep the history moving with the target, so that
+		// if the feedforward drops out the limiting resumes from the pad's real motion rather than
+		// from wherever the setpoint was when it last ran.
+		_sp_pev_prev = _sp_pev;
+		_sp_pev = sp_curr;
+		return;
 	}
 
-	// Limit the setpoint speed such that it can decelerate to v_terminal by the time it reaches
-	// the target, from v^2 = v_terminal^2 + 2*a*d with the factor of 2 dropped to keep the
-	// existing sqrt(a*d) convention. v_terminal is 0 for a static target, so this reduces to the
-	// original "stop at the setpoint" limit.
-	float max_spd = sqrtf(v_terminal * v_terminal
-			      + _param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
-					      sp_y))).length());
+	// limit the setpoint speed to the maximum cruise speed
+	matrix::Vector2f sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
+
+	if (sp_vel.length() > _param_xy_vel_cruise) {
+		sp_vel = sp_vel.normalized() * _param_xy_vel_cruise;
+		sp_curr = _sp_pev + sp_vel * dt;
+	}
+
+	// limit the setpoint acceleration to the maximum acceleration
+	matrix::Vector2f sp_acc = (sp_curr - _sp_pev * 2 + _sp_pev_prev) / (dt * dt); // acceleration of the setpoints
+
+	if (sp_acc.length() > _param_acceleration_hor) {
+		sp_acc = sp_acc.normalized() * _param_acceleration_hor;
+		sp_curr = _sp_pev * 2 - _sp_pev_prev + sp_acc * (dt * dt);
+	}
+
+	// limit the setpoint speed such that we can stop at the setpoint given the maximum acceleration/deceleration
+	float max_spd = sqrtf(_param_acceleration_hor * ((matrix::Vector2f)(_sp_pev - matrix::Vector2f(sp_x,
+			      sp_y))).length());
 	sp_vel = (sp_curr - _sp_pev) / dt; // velocity of the setpoints
 
 	if (sp_vel.length() > max_spd) {
@@ -793,11 +790,6 @@ matrix::Vector2f PrecLand::target_absolute_velocity() const
 	}
 
 	return _target_vel_filter.getState();
-}
-
-float PrecLand::target_absolute_speed() const
-{
-	return target_absolute_velocity().length();
 }
 
 void PrecLand::update_current_vel_setpoint()

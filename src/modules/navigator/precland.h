@@ -110,7 +110,9 @@ private:
 	// check if a given state could be changed into. Return true if possible to transition to state, false otherwise
 	bool check_state_conditions(PrecLandState state);
 
-	void slewrate(float &sp_x, float &sp_y, float v_terminal);
+	// Rate limit a setpoint closing on a static target. Passes a moving target through untouched,
+	// keeping its history, and leaves the shaping to the flight task's position smoothing.
+	void slewrate(float &sp_x, float &sp_y);
 	void update_current_vel_setpoint();
 
 	// True when the target is moving, its velocity is usable, and the operator has enabled
@@ -118,10 +120,8 @@ private:
 	bool moving_target_ff_active() const;
 
 	// Absolute horizontal velocity of the target in the local frame, low-pass filtered and clamped to
-	// the vehicle's cruise speed. Zero when the feedforward is not active. Single source of truth for
-	// both the commanded feedforward and the slew limiter's terminal speed, so the two can never
-	// disagree. Reads the filter state, so it is only as fresh as the last
-	// update_target_velocity_filter() call.
+	// the vehicle's cruise speed. Zero when the feedforward is not active. Reads the filter state, so
+	// it is only as fresh as the last update_target_velocity_filter() call.
 	matrix::Vector2f target_absolute_velocity() const;
 
 	// Unfiltered absolute horizontal velocity of the target, clamped to cruise speed. Only the input
@@ -131,9 +131,6 @@ private:
 	// Advance the target velocity low-pass. Must be called exactly once per cycle, before any state
 	// handler reads target_absolute_velocity().
 	void update_target_velocity_filter();
-
-	// Magnitude of target_absolute_velocity().
-	float target_absolute_speed() const;
 
 	landing_target_pose_s _target_pose{}; /**< precision landing target position */
 
