@@ -143,6 +143,7 @@ bool FlightTaskAuto::update()
 		// track from the previous waypoint, which is meaningless for a target that keeps moving.
 		// Chase the target directly instead.
 		_position_setpoint = _triplet_target;
+		_position_setpoint.xy() += _movingTargetLead();
 		_velocity_setpoint.xy() = Vector2f(_target_velocity);
 		_velocity_setpoint(2) = NAN; // Descent rate stays with the smoother
 		break;
@@ -320,11 +321,31 @@ void FlightTaskAuto::_prepareLandSetpoints()
 	_yaw_setpoint = _land_heading;
 
 	if (track_moving_target) {
+		_position_setpoint.xy() += _movingTargetLead();
 		_velocity_setpoint.xy() = Vector2f(_target_velocity);
 	}
 
 	_velocity_setpoint(2) = vertical_speed;
 	_gear.landing_gear = landing_gear_s::GEAR_DOWN;
+}
+
+Vector2f FlightTaskAuto::_movingTargetLead() const
+{
+	const Vector2f target_velocity(_target_velocity);
+
+	if (!target_velocity.isAllFinite()) {
+		return Vector2f(0.f, 0.f);
+	}
+
+	// The navigator places the target when it publishes the triplet, so the target has been moving
+	// on since then. Measured from the message timestamp rather than current.timestamp, which only
+	// changes when a setpoint is created and so says nothing about how old the position in it is.
+	// Without this the position setpoint trails a moving target by its speed times this age, which
+	// the velocity feedforward cannot make up for: it matches the target's speed, not its position.
+	const hrt_abstime published = _sub_triplet_setpoint.get().timestamp;
+	const float age_s = (_time_stamp_current > published) ? (_time_stamp_current - published) * 1e-6f : 0.f;
+
+	return target_velocity * math::min(age_s, MOVING_TARGET_MAX_LEAD_AGE_S);
 }
 
 void FlightTaskAuto::_limitYawRate()

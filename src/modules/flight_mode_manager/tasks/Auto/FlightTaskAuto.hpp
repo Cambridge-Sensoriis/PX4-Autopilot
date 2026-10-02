@@ -118,6 +118,18 @@ protected:
 	bool _checkTakeoff() override { return _want_takeoff; };
 
 	void _prepareLandSetpoints();
+
+	/**
+	 * How far a moving target has travelled since the navigator placed it: the commanded target
+	 * velocity times the age of the triplet. Zero when no target velocity is commanded.
+	 */
+	matrix::Vector2f _movingTargetLead() const;
+
+	/** Cap on the age _movingTargetLead() extrapolates over. The navigator republishes the triplet
+	 *  every 50 ms while it tracks a target, so this only binds once it has stopped, and then holds
+	 *  the lead at a bounded offset instead of carrying the setpoint off on a stale velocity. */
+	static constexpr float MOVING_TARGET_MAX_LEAD_AGE_S = 0.2f;
+
 	bool _highEnoughForLandingGear(); /**< Checks if gears can be lowered. */
 
 	void updateParams() override; /**< See ModuleParam class */
